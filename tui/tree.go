@@ -6,6 +6,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/nelsong6/fzt/core"
 	"github.com/nelsong6/fzt/render"
+	terminal "github.com/nelsong6/fzt-terminal"
 )
 
 
@@ -27,7 +28,7 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 			versionStr = render.Version
 		}
 		title := cfg.Title
-		if ctlTitle := core.ScopeCtlTitle(s); ctlTitle != "" {
+		if ctlTitle := terminal.ScopeCtlTitle(s); ctlTitle != "" {
 			title = ctlTitle
 		}
 		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, versionStr, cfg.Label)

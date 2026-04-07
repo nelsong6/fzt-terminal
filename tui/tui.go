@@ -156,7 +156,7 @@ func applyFrontendConfig(s *core.State, cfg Config) {
 func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string, error) {
 	s, searchCols := core.NewState(items, cfg)
 	applyFrontendConfig(s, cfg)
-	core.InjectCommandFolder(s, render.Version)
+	terminal.InjectCommandFolder(s, render.Version)
 	ctx := s.TopCtx()
 	ctx.TreeExpanded = make(map[int]bool)
 	ctx.QueryExpanded = make(map[int]bool)
@@ -271,7 +271,7 @@ func parseSimQuery(query string) []simKey {
 func Simulate(items []core.Item, cfg Config, query string, w, h int, styled bool) []Frame {
 	s, searchCols := core.NewState(items, cfg)
 	applyFrontendConfig(s, cfg)
-	core.InjectCommandFolder(s, render.Version)
+	terminal.InjectCommandFolder(s, render.Version)
 
 	if cfg.TreeMode {
 		ctx := s.TopCtx()

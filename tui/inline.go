@@ -6,6 +6,7 @@ import (
 
 	"github.com/nelsong6/fzt/core"
 	"github.com/nelsong6/fzt/render"
+	terminal "github.com/nelsong6/fzt-terminal"
 )
 
 // RunInline renders the TUI inline in the main terminal buffer (no alternate screen).
@@ -47,7 +48,7 @@ func RunInline(items []core.Item, cfg Config) (string, error) {
 
 	s, searchCols := core.NewState(items, inlineCfg)
 	applyFrontendConfig(s, inlineCfg)
-	core.InjectCommandFolder(s, render.Version)
+	terminal.InjectCommandFolder(s, render.Version)
 
 	// Initialize tree state if tree mode
 	if inlineCfg.TreeMode {

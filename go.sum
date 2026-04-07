@@ -4,8 +4,8 @@ github.com/gdamore/tcell/v2 v2.13.8 h1:Mys/Kl5wfC/GcC5Cx4C2BIQH9dbnhnkPgS9/wF3Rl
 github.com/gdamore/tcell/v2 v2.13.8/go.mod h1:+Wfe208WDdB7INEtCsNrAN6O2m+wsTPk1RAovjaILlo=
 github.com/lucasb-eyer/go-colorful v1.3.0 h1:2/yBRLdWBZKrf7gB40FoiKfAWYQ0lqNcbuQwVHXptag=
 github.com/lucasb-eyer/go-colorful v1.3.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
-github.com/nelsong6/fzt v0.1.30 h1:rcjN/SsKANszmoD6bhflTDzpMnAUXdMQ74aPIMT3lck=
-github.com/nelsong6/fzt v0.1.30/go.mod h1:MWF/EyrPqefkvNak+m14qfNcgPTrFLNp9/ign9ofUss=
+github.com/nelsong6/fzt v0.2.38 h1:zg58O6nl7QWarCVcIl8ZPDy+m0sEkjsR22emJuH6Zq4=
+github.com/nelsong6/fzt v0.2.38/go.mod h1:aEG+5uj9NbRCDnbZQSGLst2m1yKhHhsBSH9r4xvLOoc=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
 github.com/rivo/uniseg v0.4.7/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=

@@ -21,10 +21,9 @@ import (
 func processAction(s *core.State, action string) string {
 	if len(action) > 7 && action[:7] == "select:" {
 		if terminal.IsInCommandScope(s) {
-			selected := action[7:]
-			// Split on tab — FormatOutput joins fields with \t
-			fields := strings.Split(selected, "\t")
-			item := core.Item{Fields: fields}
+			// Look up the actual item from the tree — the formatted string
+			// may have been truncated by AcceptNth, losing metadata fields.
+			item := findSelectedItem(s)
 			cmdAction := terminal.HandleCommandAction(s, item)
 			if cmdAction == "" {
 				// Handled internally — clear search state so top match
@@ -41,6 +40,20 @@ func processAction(s *core.State, action string) string {
 		}
 	}
 	return action
+}
+
+// findSelectedItem returns the actual tree item at the current cursor position.
+func findSelectedItem(s *core.State) core.Item {
+	ctx := s.TopCtx()
+	visible := core.TreeVisibleItems(s)
+	if ctx.TreeCursor >= 0 && ctx.TreeCursor < len(visible) {
+		return visible[ctx.TreeCursor].Item
+	}
+	// Fallback: top filtered match
+	if len(ctx.Filtered) > 0 {
+		return ctx.Filtered[0]
+	}
+	return core.Item{}
 }
 
 // Config is an alias for core.Config so existing callers keep compiling.

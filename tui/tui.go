@@ -12,7 +12,27 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/nelsong6/fzt/core"
 	"github.com/nelsong6/fzt/render"
+	terminal "github.com/nelsong6/fzt-terminal"
 )
+
+// processAction intercepts command palette actions before returning to the caller.
+// If the selection is inside a command scope, it routes through HandleCommandAction
+// which handles version toggle, update, and frontend-registered commands.
+func processAction(s *core.State, action string) string {
+	if len(action) > 7 && action[:7] == "select:" {
+		if terminal.IsInCommandScope(s) {
+			selected := action[7:]
+			// Build a minimal item for command dispatch
+			item := core.Item{Fields: []string{selected}}
+			cmdAction := terminal.HandleCommandAction(s, item)
+			if cmdAction == "" {
+				return "" // handled internally (version toggle)
+			}
+			return cmdAction // "update", frontend action, etc.
+		}
+	}
+	return action
+}
 
 // Config is an alias for core.Config so existing callers keep compiling.
 type Config = core.Config
@@ -100,8 +120,11 @@ func Run(items []core.Item, cfg Config) (string, error) {
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
-			action := core.HandleKeyEvent(s, ev.Key(), ev.Rune(), cfg, searchCols)
+			raw := core.HandleKeyEvent(s, ev.Key(), ev.Rune(), cfg, searchCols)
+			action := processAction(s, raw)
 			switch {
+			case action == "":
+				// handled internally
 			case action == "cancel":
 				return "", nil
 			case len(action) > 7 && action[:7] == "select:":
@@ -155,8 +178,11 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
-			action := core.HandleUnifiedKey(s, ev.Key(), ev.Rune(), cfg, searchCols)
+			raw := core.HandleUnifiedKey(s, ev.Key(), ev.Rune(), cfg, searchCols)
+			action := processAction(s, raw)
 			switch {
+			case action == "":
+				// handled internally (e.g. version toggle)
 			case action == "cancel" || action == "abort":
 				return "", nil
 			case action == "update":
@@ -165,6 +191,9 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 				os.Exit(0)
 			case len(action) > 7 && action[:7] == "select:":
 				return action[7:], nil
+			default:
+				// frontend action — return it
+				return action, nil
 			}
 		case *tcell.EventResize:
 			screen.Sync()

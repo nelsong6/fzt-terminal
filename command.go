@@ -9,6 +9,10 @@ import (
 	"github.com/nelsong6/fzt/core"
 )
 
+// EngineVersion is the fzt engine version this build was compiled against.
+// Set via ldflags: -X github.com/nelsong6/fzt-terminal.EngineVersion=v0.2.39
+var EngineVersion = "dev"
+
 // InjectCommandFolder appends the `:` command folder and its children to the
 // tree's AllItems. When a frontend is registered (FrontendName set), the first
 // level holds frontend commands and a nested `:` subfolder holds core commands.

@@ -27,7 +27,15 @@ func processAction(s *core.State, action string) string {
 			item := core.Item{Fields: fields}
 			cmdAction := terminal.HandleCommandAction(s, item)
 			if cmdAction == "" {
-				return "" // handled internally (version toggle)
+				// Handled internally — clear search state so top match
+				// highlight doesn't linger on the previously selected item
+				ctx := s.TopCtx()
+				ctx.Query = nil
+				ctx.Cursor = 0
+				ctx.Filtered = nil
+				ctx.SearchActive = false
+				ctx.QueryExpanded = make(map[int]bool)
+				return ""
 			}
 			return cmdAction // "update", frontend action, etc.
 		}

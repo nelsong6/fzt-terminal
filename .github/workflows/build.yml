@@ -1,0 +1,142 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # WASM bridge
+          - name: wasm
+            goos: js
+            goarch: wasm
+            ext: .wasm
+            package: ./cmd/wasm
+            output: fzt.wasm
+          # Automate binaries
+          - name: automate-windows
+            goos: windows
+            goarch: amd64
+            ext: .exe
+            package: ./cmd/automate
+            output: fzt-automate-windows-amd64.exe
+          - name: automate-linux
+            goos: linux
+            goarch: amd64
+            ext: ""
+            package: ./cmd/automate
+            output: fzt-automate-linux-amd64
+          - name: automate-darwin
+            goos: darwin
+            goarch: arm64
+            ext: ""
+            package: ./cmd/automate
+            output: fzt-automate-darwin-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Compute version
+        id: version
+        run: |
+          latest=$(gh release list -R ${{ github.repository }} --limit 1 --json tagName -q '.[0].tagName // empty' 2>/dev/null || echo "")
+          if [ -z "$latest" ]; then
+            echo "version=v0.1.0" >> $GITHUB_OUTPUT
+          else
+            patch=$(echo "$latest" | sed 's/v[0-9]*\.[0-9]*\.//')
+            echo "version=v0.1.$((patch + 1))" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: go build -o ${{ matrix.output }} ${{ matrix.package }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.output }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Prepare release assets
+        run: |
+          mkdir release
+          cp artifacts/wasm/fzt.wasm release/
+          cp artifacts/automate-windows/fzt-automate-windows-amd64.exe release/
+          cp artifacts/automate-linux/fzt-automate-linux-amd64 release/
+          cp artifacts/automate-darwin/fzt-automate-darwin-arm64 release/
+          cp web/fzt-terminal.js release/
+          cp web/fzt-terminal.css release/
+          cp web/fzt-web.js release/
+          cp web/fzt-dom-renderer.js release/
+      - name: Create versioned release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest=$(gh release list -R ${{ github.repository }} --limit 1 --json tagName -q '.[0].tagName // empty')
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+          else
+            patch=$(echo "$latest" | sed 's/v[0-9]*\.[0-9]*\.//')
+            next="v0.1.$((patch + 1))"
+          fi
+          gh release create "$next" release/* \
+            -R ${{ github.repository }} \
+            --title "$next" \
+            --notes "$(git log --oneline -1)"
+
+      - name: Azure Login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+
+      - name: Get GitHub App credentials from Key Vault
+        id: app-creds
+        run: |
+          APP_ID=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name github-app-id --query value -o tsv)
+          echo "::add-mask::$APP_ID"
+          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+          PRIVATE_KEY=$(az keyvault secret show --vault-name ${{ vars.KEY_VAULT_NAME }} --name github-app-private-key --query value -o tsv)
+          echo "::add-mask::$PRIVATE_KEY"
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "private_key<<$EOF" >> $GITHUB_OUTPUT
+          echo "$PRIVATE_KEY" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ steps.app-creds.outputs.app_id }}
+          private-key: ${{ steps.app-creds.outputs.private_key }}
+          repositories: fzt-showcase,my-homepage
+
+      - name: Notify downstream repos
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          for repo in nelsong6/fzt-showcase nelsong6/my-homepage; do
+            gh api repos/$repo/dispatches \
+              -f event_type=fzt-updated
+          done

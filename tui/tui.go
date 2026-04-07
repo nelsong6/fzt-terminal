@@ -22,8 +22,9 @@ func processAction(s *core.State, action string) string {
 	if len(action) > 7 && action[:7] == "select:" {
 		if terminal.IsInCommandScope(s) {
 			selected := action[7:]
-			// Build a minimal item for command dispatch
-			item := core.Item{Fields: []string{selected}}
+			// Split on tab — FormatOutput joins fields with \t
+			fields := strings.Split(selected, "\t")
+			item := core.Item{Fields: fields}
 			cmdAction := terminal.HandleCommandAction(s, item)
 			if cmdAction == "" {
 				return "" // handled internally (version toggle)

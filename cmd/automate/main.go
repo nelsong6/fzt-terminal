@@ -15,12 +15,16 @@ import (
 	"strings"
 
 	"github.com/nelsong6/fzt/core"
+	"github.com/nelsong6/fzt/render"
 	"github.com/nelsong6/fzt-terminal/tui"
 )
 
-var Version = "dev"
-
 func main() {
+	if render.Version == "UNSET" {
+		fmt.Fprintln(os.Stderr, "fzt-automate: version not set — use 'go run ./build' or build with ldflags")
+		os.Exit(1)
+	}
+
 	yamlPath := ""
 	title := "What would you like to do?"
 	header := "Name\tDescription"
@@ -44,7 +48,7 @@ func main() {
 				i++
 			}
 		case "--version":
-			fmt.Println(Version)
+			fmt.Println(render.Version)
 			os.Exit(0)
 		}
 	}
@@ -77,7 +81,7 @@ func main() {
 		Title:           title,
 		TreeMode:        true,
 		FrontendName:    "automate",
-		FrontendVersion: Version,
+		FrontendVersion: render.Version,
 	}
 
 	result, err := tui.Run(items, cfg)

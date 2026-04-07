@@ -468,11 +468,7 @@ func drawReverse(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 
 	borderOffset := 0
 	if cfg.Border {
-		versionStr := ""
-		if s.ShowVersion {
-			versionStr = render.Version
-		}
-		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, versionStr, cfg.Label)
+		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, s.VersionDisplay, cfg.Label)
 		y++
 		borderOffset = 1
 	}
@@ -583,11 +579,7 @@ func drawDefault(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 
 	borderOffset := 0
 	if cfg.Border {
-		versionStr := ""
-		if s.ShowVersion {
-			versionStr = render.Version
-		}
-		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, versionStr, cfg.Label)
+		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, s.VersionDisplay, cfg.Label)
 		y++
 		borderOffset = 1
 	}

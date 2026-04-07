@@ -6,6 +6,9 @@
 package terminal
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/nelsong6/fzt/core"
 )
 
@@ -26,14 +29,28 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 		coreVerStr = "dev"
 	}
 
+	// Build version registry — each entry gets an index that "on" buttons reference
+	s.VersionRegistry = nil
+	if hasFrontend {
+		feLabel := s.FrontendName
+		feVer := s.FrontendVersion
+		if feVer == "" {
+			feVer = "unknown"
+		}
+		s.VersionRegistry = append(s.VersionRegistry, feLabel+" "+feVer) // index 0: frontend
+		s.VersionRegistry = append(s.VersionRegistry, "fzt "+coreVerStr) // index 1: engine
+	} else {
+		s.VersionRegistry = append(s.VersionRegistry, "fzt "+coreVerStr) // index 0: engine
+	}
+
 	base := len(ctx.AllItems)
 	ctlFolderIdx := base
 	var items []core.Item
 
 	if hasFrontend {
-		items = buildTwoLevelCommandTree(s, ctlFolderIdx, coreVerStr)
+		items = buildTwoLevelCommandTree(s, ctlFolderIdx, 0, 1) // feIdx=0, coreIdx=1
 	} else {
-		items = buildCoreLevelCommandTree(ctlFolderIdx, coreVerStr)
+		items = buildCoreLevelCommandTree(ctlFolderIdx, 0) // coreIdx=0
 	}
 
 	ctx.AllItems = append(ctx.AllItems, items...)
@@ -41,7 +58,8 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 }
 
 // buildCoreLevelCommandTree builds `:` → core commands directly (no frontend layer).
-func buildCoreLevelCommandTree(ctlFolderIdx int, coreVersion string) []core.Item {
+// versionIdx is the index into State.VersionRegistry for this level's version string.
+func buildCoreLevelCommandTree(ctlFolderIdx int, versionIdx int) []core.Item {
 	idx := ctlFolderIdx + 1
 
 	versionFolderIdx := idx
@@ -53,10 +71,11 @@ func buildCoreLevelCommandTree(ctlFolderIdx int, coreVersion string) []core.Item
 	updateIdx := idx
 
 	ctlChildren := []int{versionFolderIdx, updateIdx}
+	idxStr := fmt.Sprintf("%d", versionIdx)
 
 	return []core.Item{
 		{
-			Fields: []string{":", "fzt " + coreVersion}, Depth: 0, HasChildren: true,
+			Fields: []string{":"}, Depth: 0, HasChildren: true,
 			ParentIdx: -1, Children: ctlChildren, Hidden: true,
 		},
 		{
@@ -64,22 +83,20 @@ func buildCoreLevelCommandTree(ctlFolderIdx int, coreVersion string) []core.Item
 			HasChildren: true, ParentIdx: ctlFolderIdx,
 			Children: []int{versionOnIdx, versionOffIdx},
 		},
-		{Fields: []string{"on", "Show version"}, Depth: 2, ParentIdx: versionFolderIdx},
+		{Fields: []string{"on", "Show version", idxStr}, Depth: 2, ParentIdx: versionFolderIdx},
 		{Fields: []string{"off", "Hide version"}, Depth: 2, ParentIdx: versionFolderIdx},
 		{Fields: []string{"update", "Update fzt to latest release"}, Depth: 1, ParentIdx: ctlFolderIdx},
 	}
 }
 
 // buildTwoLevelCommandTree builds `:` → frontend commands + `::` → core commands.
-func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, coreVersion string) []core.Item {
+// feIdx and coreIdx are indices into State.VersionRegistry.
+func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreIdx int) []core.Item {
 	idx := ctlFolderIdx + 1
 	var ctlChildren []int
 
-	frontendName := s.FrontendName
-	frontendVer := s.FrontendVersion
-	if frontendVer == "" {
-		frontendVer = "unknown"
-	}
+	feIdxStr := fmt.Sprintf("%d", feIdx)
+	coreIdxStr := fmt.Sprintf("%d", coreIdx)
 
 	feVersionFolderIdx := idx
 	ctlChildren = append(ctlChildren, feVersionFolderIdx)
@@ -117,11 +134,11 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, coreVersion strin
 	})
 
 	items = append(items, core.Item{
-		Fields: []string{"version", frontendName + " " + frontendVer}, Depth: 1,
+		Fields: []string{"version", "Show/hide version in title bar"}, Depth: 1,
 		HasChildren: true, ParentIdx: ctlFolderIdx,
 		Children: []int{feVersionOnIdx, feVersionOffIdx},
 	})
-	items = append(items, core.Item{Fields: []string{"on", "Show version"}, Depth: 2, ParentIdx: feVersionFolderIdx})
+	items = append(items, core.Item{Fields: []string{"on", "Show version", feIdxStr}, Depth: 2, ParentIdx: feVersionFolderIdx})
 	items = append(items, core.Item{Fields: []string{"off", "Hide version"}, Depth: 2, ParentIdx: feVersionFolderIdx})
 
 	for _, cmd := range s.FrontendCommands {
@@ -131,7 +148,7 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, coreVersion strin
 	}
 
 	items = append(items, core.Item{
-		Fields: []string{":", "fzt " + coreVersion}, Depth: 1,
+		Fields: []string{":", "fzt core"}, Depth: 1,
 		HasChildren: true, ParentIdx: ctlFolderIdx, Children: coreSubChildren,
 	})
 
@@ -140,7 +157,7 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, coreVersion strin
 		HasChildren: true, ParentIdx: coreSubfolderIdx,
 		Children: []int{coreVersionOnIdx, coreVersionOffIdx},
 	})
-	items = append(items, core.Item{Fields: []string{"on", "Show version"}, Depth: 3, ParentIdx: coreVersionFolderIdx})
+	items = append(items, core.Item{Fields: []string{"on", "Show version", coreIdxStr}, Depth: 3, ParentIdx: coreVersionFolderIdx})
 	items = append(items, core.Item{Fields: []string{"off", "Hide version"}, Depth: 3, ParentIdx: coreVersionFolderIdx})
 
 	items = append(items, core.Item{Fields: []string{"update", "Update fzt to latest release"}, Depth: 2, ParentIdx: coreSubfolderIdx})
@@ -158,10 +175,16 @@ func HandleCommandAction(s *core.State, item core.Item) string {
 
 	switch name {
 	case "on":
-		s.ShowVersion = true
+		// Third field is the version registry index
+		if len(item.Fields) >= 3 {
+			idx, err := strconv.Atoi(item.Fields[2])
+			if err == nil && idx >= 0 && idx < len(s.VersionRegistry) {
+				s.VersionDisplay = s.VersionRegistry[idx]
+			}
+		}
 		return ""
 	case "off":
-		s.ShowVersion = false
+		s.VersionDisplay = ""
 		return ""
 	case "update":
 		return "update"

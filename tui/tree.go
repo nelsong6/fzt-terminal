@@ -24,9 +24,7 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 
 	if cfg.Border {
 		versionStr := ""
-		if s.ShowVersion {
-			versionStr = render.Version
-		}
+		versionStr = s.VersionDisplay
 		title := cfg.Title
 		if ctlTitle := terminal.ScopeCtlTitle(s); ctlTitle != "" {
 			title = ctlTitle

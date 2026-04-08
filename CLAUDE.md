@@ -92,6 +92,49 @@ The `:` item is a hidden folder injected into every fzt app's item tree.
 
 The prompt shows scope breadcrumbs when inside command folders. `ScopeCtlTitle` returns "fzt ctl" at `::` depth or "<frontend> ctl" at `:` depth.
 
+### Disambiguation of on/off leaves
+
+The command tree contains multiple items named "on" and "off" (under `version`, `whoami`, core `version`). These are NOT ambiguous -- fzt's ancestor matching lets users type "whoami on" or "version off" to reach the exact item. Each "on" item stores a different `VersionRegistry` index in `Fields[2]`, so `HandleCommandAction` sets the correct display string regardless. See `fzt/core/scorer.go` ScoreItem comment for the design rationale. Never rename these to be unique.
+
+### FrontendCommands nesting
+
+`CommandItem.Children` enables one level of nesting in the `:` palette. Parent commands with children appear as folders; selecting a child returns its `Action` string. In `buildTwoLevelCommandTree`, index math reserves contiguous ranges: `idx++` for the parent, then `idx += len(cmd.Children)` for children. Items must be appended in the same order indices were reserved.
+
+### Startup flow (terminal -- `tui.Run`)
+
+1. `tui.Run(items, cfg)` -- creates tcell screen, delegates to `runWithSession` if TreeMode
+2. `core.NewState(items, cfg)` -- creates root context with AllItems
+3. `applyFrontendConfig(s, cfg)` -- copies FrontendName/Version/Commands to State
+4. `terminal.InjectCommandFolder(s, EngineVersion)` -- appends hidden `:` folder
+5. Render loop: `drawUnified` -> `PollEvent` -> `HandleUnifiedKey` -> `processAction` -> repeat
+
+### Startup flow (WASM -- `cmd/wasm/main.go`)
+
+1. JS calls `fzt.loadYAML(yaml)` -> stores parsed items
+2. JS calls `fzt.setFrontend({name, version})` -> buffers in `pendingFrontend`
+3. JS calls `fzt.addCommands([...])` -> buffers in `pendingCommands`
+4. JS calls `fzt.init(cols, rows)` -> creates session, applies pending config, injects commands
+5. Subsequent: `fzt.handleKey(key, ctrl, shift)` -> returns `{ansi, action}`
+
+The pending* variables buffer config because InjectCommandFolder runs during init and needs FrontendName/Commands already set on State.
+
+### Action string format
+
+All key/click handlers return an action string:
+
+- `""` -- handled internally (version toggle, scope change)
+- `"cancel"` -- user quit (Ctrl+C, Escape from root)
+- `"select:<output>"` -- leaf selected. Output is the formatted item fields per AcceptNth.
+- `"update"` -- user selected the fzt self-update command
+- Any other string -- frontend command action (e.g., `"edit"`, `"copy-yaml"`, `"load-nelson"`)
+
+### Cross-repo references
+
+- Scoring engine (TieredScore, FuzzyMatch, FilterItems, ancestor matching): `fzt/core/scorer.go`, `fzt/core/tree.go`
+- Ancestor matching design doc: `fzt/CLAUDE.md` "Ancestor matching eliminates name collisions"
+- Homepage bookmark integration: `my-homepage/frontend/fzh-terminal.js`
+- Config field semantics: `fzt/CLAUDE.md` "Config field relationships"
+
 ## Dependencies
 
 - `github.com/nelsong6/fzt v0.1.30` -- engine (state, scoring, tree logic, YAML parsing, render abstractions)

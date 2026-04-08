@@ -6,6 +6,7 @@
 //
 //	go run ./build              # native binary (fzt.exe on Windows)
 //	go run ./build wasm         # WASM binary (fzt.wasm)
+//	go run ./build automate     # fzt-automate binary
 package main
 
 import (
@@ -25,19 +26,31 @@ func main() {
 		}
 	}
 
-	wasm := len(os.Args) > 1 && os.Args[1] == "wasm"
+	target := ""
+	if len(os.Args) > 1 {
+		target = os.Args[1]
+	}
 
 	ext := ""
 	pkg := "."
 	output := "fzt"
 	env := os.Environ()
 
-	if wasm {
+	switch target {
+	case "wasm":
 		ext = ".wasm"
 		pkg = "./cmd/wasm"
 		env = append(env, "GOOS=js", "GOARCH=wasm")
-	} else if runtime.GOOS == "windows" {
-		ext = ".exe"
+	case "automate":
+		pkg = "./cmd/automate"
+		output = "fzt-automate"
+		if runtime.GOOS == "windows" {
+			ext = ".exe"
+		}
+	default:
+		if runtime.GOOS == "windows" {
+			ext = ".exe"
+		}
 	}
 
 	output += ext

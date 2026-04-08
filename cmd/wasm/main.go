@@ -11,6 +11,10 @@ import (
 	"github.com/nelsong6/fzt-terminal/tui"
 )
 
+// Lifecycle: JS must call loadYAML, then optionally setFrontend/addCommands,
+// then init to create a session. The pending* variables buffer frontend identity
+// and commands because InjectCommandFolder runs during init and reads them from State.
+// After init, pending values are consumed and have no further effect.
 var (
 	currentItems     []core.Item
 	session          *tui.Session

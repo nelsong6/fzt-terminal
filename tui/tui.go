@@ -15,9 +15,12 @@ import (
 	terminal "github.com/nelsong6/fzt-terminal"
 )
 
-// processAction intercepts command palette actions before returning to the caller.
-// If the selection is inside a command scope, it routes through HandleCommandAction
-// which handles version toggle, update, and frontend-registered commands.
+// processAction intercepts "select:..." actions to handle command palette routing.
+// When the selection occurred inside a `:` scope (IsInCommandScope), it looks up
+// the actual tree item (not the AcceptNth-truncated string) and routes through
+// HandleCommandAction. HandleCommandAction returns "" for internally-handled actions
+// (version/identity toggle) or an action string for the caller (frontend commands).
+// After internal handling, search state is cleared to prevent stale highlight artifacts.
 func processAction(s *core.State, action string) string {
 	if len(action) > 7 && action[:7] == "select:" {
 		if terminal.IsInCommandScope(s) {
@@ -42,7 +45,10 @@ func processAction(s *core.State, action string) string {
 	return action
 }
 
-// findSelectedItem returns the actual tree item at the current cursor position.
+// findSelectedItem recovers the full Item from the tree. The formatted action string
+// may only contain AcceptNth fields (e.g. just the name), but command palette actions
+// need Fields[2] (VersionRegistry index for "on" buttons) and Fields[0] (name matching
+// for FrontendCommands). This function retrieves the complete Item with all metadata.
 func findSelectedItem(s *core.State) core.Item {
 	ctx := s.TopCtx()
 	visible := core.TreeVisibleItems(s)

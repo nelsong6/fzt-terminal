@@ -12,6 +12,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nelsong6/fzt/core"
@@ -21,7 +22,7 @@ import (
 
 func main() {
 	if render.Version == "UNSET" {
-		fmt.Fprintln(os.Stderr, "fzt-automate: version not set — use 'go run ./build' or build with ldflags")
+		fmt.Fprintln(os.Stderr, "fzt-automate: version not set — use 'go run ./build automate' or build with ldflags")
 		os.Exit(1)
 	}
 
@@ -64,6 +65,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Read loaded identity for whoami display
+	identity := ""
+	identityFile := filepath.Join(filepath.Dir(yamlPath), ".identity")
+	if data, err := os.ReadFile(identityFile); err == nil {
+		identity = strings.TrimSpace(string(data))
+	}
+
 	if header != "" {
 		headerFields := strings.Split(header, "\t")
 		headerItem := core.Item{Fields: headerFields, Depth: -1}
@@ -82,6 +90,16 @@ func main() {
 		TreeMode:        true,
 		FrontendName:    "automate",
 		FrontendVersion: render.Version,
+		InitialDisplay:  identity,
+		FrontendCommands: []core.CommandItem{
+			{Name: "load", Description: "Load an identity profile", Children: []core.CommandItem{
+				{Name: "load-nelson", Description: "Personal account", Action: "load-nelson"},
+				{Name: "load-nelson-ea", Description: "Engineered Arts", Action: "load-nelson-ea"},
+				{Name: "load-nelson-r1", Description: "R1", Action: "load-nelson-r1"},
+			}},
+			{Name: "setsecret", Description: "Set JWT signing secret", Action: "setsecret"},
+			{Name: "syncbookmarks", Description: "Sync bookmarks from cloud", Action: "syncbookmarks"},
+		},
 	}
 
 	result, err := tui.Run(items, cfg)
@@ -92,6 +110,15 @@ func main() {
 
 	if result == "" {
 		os.Exit(130)
+	}
+
+	// If the selected item has a URL, output the URL instead of the name.
+	// This lets the shell wrapper distinguish bookmark opens from function calls.
+	for _, item := range items {
+		if len(item.Fields) > 0 && item.Fields[0] == result && item.URL != "" {
+			fmt.Println(item.URL)
+			os.Exit(0)
+		}
 	}
 
 	fmt.Println(result)

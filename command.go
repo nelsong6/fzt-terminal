@@ -39,6 +39,11 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 		}
 		s.VersionRegistry = append(s.VersionRegistry, feLabel+" "+feVer) // index 0: frontend
 		s.VersionRegistry = append(s.VersionRegistry, "fzt "+coreVerStr) // index 1: engine
+		identity := s.IdentityLabel
+		if identity == "" {
+			identity = "(none)"
+		}
+		s.VersionRegistry = append(s.VersionRegistry, identity) // index 2: identity
 	} else {
 		s.VersionRegistry = append(s.VersionRegistry, "fzt "+coreVerStr) // index 0: engine
 	}
@@ -91,6 +96,11 @@ func buildCoreLevelCommandTree(ctlFolderIdx int, versionIdx int) []core.Item {
 
 // buildTwoLevelCommandTree builds `:` → frontend commands + `::` → core commands.
 // feIdx and coreIdx are indices into State.VersionRegistry.
+//
+// Index allocation: the function pre-allocates contiguous index ranges for all items
+// before building the slice. Starting from ctlFolderIdx+1, it reserves indices for:
+// version folder (3), whoami folder (3), each FrontendCommand + its Children,
+// and the core subfolder. Items must be appended in the same order as indices were reserved.
 func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreIdx int) []core.Item {
 	idx := ctlFolderIdx + 1
 	var ctlChildren []int
@@ -106,9 +116,19 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreId
 	feVersionOffIdx := idx
 	idx++
 
-	for range s.FrontendCommands {
+	// whoami folder
+	identityFolderIdx := idx
+	ctlChildren = append(ctlChildren, identityFolderIdx)
+	idx++
+	identityOnIdx := idx
+	idx++
+	identityOffIdx := idx
+	idx++
+
+	for _, cmd := range s.FrontendCommands {
 		ctlChildren = append(ctlChildren, idx)
 		idx++
+		idx += len(cmd.Children) // reserve indices for children
 	}
 
 	coreSubfolderIdx := idx
@@ -141,10 +161,33 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreId
 	items = append(items, core.Item{Fields: []string{"on", "Show version", feIdxStr}, Depth: 2, ParentIdx: feVersionFolderIdx})
 	items = append(items, core.Item{Fields: []string{"off", "Hide version"}, Depth: 2, ParentIdx: feVersionFolderIdx})
 
+	identityIdxStr := fmt.Sprintf("%d", len(s.VersionRegistry)-1)
+	items = append(items, core.Item{
+		Fields: []string{"whoami", "Show/hide loaded identity"}, Depth: 1,
+		HasChildren: true, ParentIdx: ctlFolderIdx,
+		Children: []int{identityOnIdx, identityOffIdx},
+	})
+	items = append(items, core.Item{Fields: []string{"on", "Show identity", identityIdxStr}, Depth: 2, ParentIdx: identityFolderIdx})
+	items = append(items, core.Item{Fields: []string{"off", "Hide identity"}, Depth: 2, ParentIdx: identityFolderIdx})
+
 	for _, cmd := range s.FrontendCommands {
-		items = append(items, core.Item{
-			Fields: []string{cmd.Name, cmd.Description}, Depth: 1, ParentIdx: ctlFolderIdx,
-		})
+		cmdIdx := ctlFolderIdx + len(items)
+		hasChildren := len(cmd.Children) > 0
+		cmdItem := core.Item{
+			Fields: []string{cmd.Name, cmd.Description}, Depth: 1,
+			ParentIdx: ctlFolderIdx, HasChildren: hasChildren,
+		}
+		if hasChildren {
+			for i := range cmd.Children {
+				cmdItem.Children = append(cmdItem.Children, cmdIdx+1+i)
+			}
+		}
+		items = append(items, cmdItem)
+		for _, child := range cmd.Children {
+			items = append(items, core.Item{
+				Fields: []string{child.Name, child.Description}, Depth: 2, ParentIdx: cmdIdx,
+			})
+		}
 	}
 
 	items = append(items, core.Item{
@@ -175,7 +218,10 @@ func HandleCommandAction(s *core.State, item core.Item) string {
 
 	switch name {
 	case "on":
-		// Third field is the version registry index
+		// "on" items store their VersionRegistry index in Fields[2]. This is how
+		// identical "on" names under different parents (version vs whoami) produce
+		// different results — each references a different registry index.
+		// Ancestor search disambiguates which "on" the user selected (see scorer.go).
 		if len(item.Fields) >= 3 {
 			idx, err := strconv.Atoi(item.Fields[2])
 			if err == nil && idx >= 0 && idx < len(s.VersionRegistry) {
@@ -193,6 +239,11 @@ func HandleCommandAction(s *core.State, item core.Item) string {
 	for _, cmd := range s.FrontendCommands {
 		if cmd.Name == name {
 			return cmd.Action
+		}
+		for _, child := range cmd.Children {
+			if child.Name == name {
+				return child.Action
+			}
 		}
 	}
 
@@ -249,5 +300,8 @@ func ApplyConfig(s *core.State, cfg core.Config) {
 	}
 	if len(cfg.FrontendCommands) > 0 {
 		s.FrontendCommands = cfg.FrontendCommands
+	}
+	if cfg.InitialDisplay != "" {
+		s.IdentityLabel = cfg.InitialDisplay
 	}
 }

@@ -21,7 +21,8 @@ fzt (engine)                    fzt-terminal (this repo)
 Shared frontend behavior imported by every fzt app:
 
 - **`InjectCommandFolder`** -- appends the hidden `:` command folder to the item tree. Single-level (`:` -> core commands) when no frontend is registered; two-level (`:` -> frontend commands + `::` -> core commands) when `FrontendName` is set.
-- **`HandleCommandAction`** -- routes leaf selections in the command tree (version on/off, update, frontend-registered commands).
+- **`HandleCommandAction`** -- routes leaf selections in the command tree. Version "on" reads a registry index from Fields[2] to look up the version string from `State.VersionRegistry`. "off" clears `VersionDisplay`. Frontend commands matched by name → action string.
+- **`EngineVersion`** -- module-level var set via ldflags. Used in the version registry for the `::` core level.
 - **`IsInCommandScope` / `ScopeCtlTitle`** -- scope awareness for renderers (show "fzt ctl" vs "<frontend> ctl" in the title bar).
 - **`ApplyConfig`** -- sets frontend identity (name, version, commands) from Config onto State before command injection.
 

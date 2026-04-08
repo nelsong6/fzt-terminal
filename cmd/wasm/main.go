@@ -127,13 +127,16 @@ func initSession(this js.Value, args []js.Value) interface{} {
 		HeaderLines:  1,
 	}
 
-	session = tui.NewTreeSession(items, cfg, cols, rows)
+	// Apply frontend identity before session creation so InjectCommandFolder picks it up
 	if pendingFrontend.name != "" {
-		session.SetFrontendInfo(pendingFrontend.name, pendingFrontend.version)
+		cfg.FrontendName = pendingFrontend.name
+		cfg.FrontendVersion = pendingFrontend.version
 	}
 	if len(pendingCommands) > 0 {
-		session.SetFrontendCommands(pendingCommands)
+		cfg.FrontendCommands = pendingCommands
 	}
+
+	session = tui.NewTreeSession(items, cfg, cols, rows)
 	if pendingLabel != "" {
 		session.SetLabel(pendingLabel)
 		pendingLabel = ""

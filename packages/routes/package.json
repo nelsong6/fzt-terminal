@@ -2,7 +2,7 @@
   "name": "@nelsong6/fzt-terminal-routes",
   "version": "0.1.0",
   "type": "module",
-  "description": "AT menu API routes for the shared API",
+  "description": "AT menu tree API routes for the shared API",
   "main": "index.js",
   "license": "MIT",
   "peerDependencies": {

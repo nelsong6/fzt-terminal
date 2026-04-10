@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/gdamore/tcell/v2 v2.13.8
-	github.com/nelsong6/fzt v0.2.42-0.20260408191214-f6fe7600d99e
+	github.com/nelsong6/fzt v0.2.43-0.20260410055821-fbae43653e10
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/sys v0.38.0
 	golang.org/x/term v0.37.0

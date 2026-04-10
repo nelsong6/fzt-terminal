@@ -2,63 +2,49 @@ import { Router } from 'express';
 
 /**
  * Creates the AT menu routes as an Express router.
+ * Menu data lives in Cosmos DB (HomepageDB/userdata) with version history.
  *
  * @param {{
  *   requireAuth: Function,
- *   bookmarksContainerClient: import('@azure/storage-blob').ContainerClient,
+ *   container: import('@azure/cosmos').Container,
  * }} opts
  */
-export function createATRoutes({ requireAuth, bookmarksContainerClient }) {
+export function createATRoutes({ requireAuth, container }) {
   const router = Router();
 
-  // Sanitize userId for blob naming
-  function menuBlobName(userId) {
-    return 'menu-' + userId.replace(/[|]/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') + '.yaml';
+  function menuId(userId) {
+    return `menu_${userId}`;
   }
 
-  // Read a JSON blob by name. Returns { data, lastModified } or null.
-  async function readBlob(name) {
-    const blob = bookmarksContainerClient.getBlobClient(name);
-    const props = await blob.getProperties().catch(() => null);
-    if (!props) return null;
-    const download = await blob.download(0);
-    const chunks = [];
-    for await (const chunk of download.readableStreamBody) {
-      chunks.push(chunk);
-    }
-    return {
-      data: JSON.parse(Buffer.concat(chunks).toString('utf-8')),
-      lastModified: props.lastModified,
-    };
+  function historyId(userId, version) {
+    return `menu_${userId}_v${version}`;
   }
 
-  // Write a JSON blob by name. Returns { lastModified }.
-  async function writeBlob(name, data) {
-    const blob = bookmarksContainerClient.getBlockBlobClient(name);
-    const content = JSON.stringify(data);
-    await blob.upload(content, content.length, {
-      blobHTTPHeaders: { blobContentType: 'application/json' },
-    });
-    const props = await blob.getProperties();
-    return { lastModified: props.lastModified };
-  }
-
-  // GET /api/menu — fetch the full menu tree for the authenticated user
+  // GET /api/menu — fetch the current menu tree
   router.get('/api/menu', requireAuth, async (req, res) => {
     try {
       const userId = req.user.sub;
-      const result = await readBlob(menuBlobName(userId));
-      if (!result) {
-        return res.json({ menu: [], updatedAt: null });
+      const { resource } = await container.item(menuId(userId), userId).read();
+
+      if (!resource) {
+        return res.json({ menu: [], updatedAt: null, etag: null });
       }
-      res.json({ menu: result.data, updatedAt: result.lastModified.toISOString() });
+
+      res.json({
+        menu: resource.menu,
+        updatedAt: resource.updatedAt,
+        etag: resource._etag,
+      });
     } catch (error) {
+      if (error.code === 404) {
+        return res.json({ menu: [], updatedAt: null, etag: null });
+      }
       console.error('Error fetching menu:', error);
       res.status(500).json({ error: 'Failed to fetch menu', message: error.message });
     }
   });
 
-  // PUT /api/menu — save the full menu tree
+  // PUT /api/menu — save the menu tree, creating a version history entry
   router.put('/api/menu', requireAuth, async (req, res) => {
     try {
       const userId = req.user.sub;
@@ -68,24 +54,130 @@ export function createATRoutes({ requireAuth, bookmarksContainerClient }) {
         return res.status(400).json({ error: 'Request body must contain a menu array' });
       }
 
-      // Conflict detection
+      // Read current doc for version number
+      let currentVersion = 0;
+      let currentDoc = null;
+      try {
+        const { resource } = await container.item(menuId(userId), userId).read();
+        if (resource) {
+          currentDoc = resource;
+          currentVersion = resource.version || 0;
+        }
+      } catch (e) {
+        if (e.code !== 404) throw e;
+      }
+
+      const newVersion = currentVersion + 1;
+      const now = new Date().toISOString();
+
+      // Write history document for the previous state (if it exists)
+      if (currentDoc) {
+        await container.items.create({
+          id: historyId(userId, currentVersion),
+          userId,
+          type: 'menu-history',
+          menu: currentDoc.menu,
+          version: currentVersion,
+          updatedAt: currentDoc.updatedAt,
+        });
+      }
+
+      // Build updated current document
+      const newDoc = {
+        id: menuId(userId),
+        userId,
+        type: 'menu',
+        menu,
+        version: newVersion,
+        updatedAt: now,
+      };
+
+      // Upsert with etag conflict detection if provided
+      const options = {};
       if (lastKnownVersion) {
-        const current = await readBlob(menuBlobName(userId));
-        if (current && current.lastModified > new Date(lastKnownVersion)) {
+        options.accessCondition = { type: 'IfMatch', condition: lastKnownVersion };
+      }
+
+      try {
+        const { resource } = await container.items.upsert(newDoc, options);
+        res.json({
+          menu: resource.menu,
+          updatedAt: resource.updatedAt,
+          etag: resource._etag,
+          version: resource.version,
+        });
+      } catch (error) {
+        if (error.code === 412) {
+          // Etag mismatch — someone else wrote
+          const { resource: current } = await container.item(menuId(userId), userId).read();
           return res.status(409).json({
             error: 'Conflict detected',
             message: 'Menu has been modified elsewhere.',
-            currentMenu: current.data,
-            currentVersion: current.lastModified.toISOString(),
+            currentMenu: current.menu,
+            currentVersion: current._etag,
           });
         }
+        throw error;
       }
-
-      const { lastModified } = await writeBlob(menuBlobName(userId), menu);
-      res.json({ menu, updatedAt: lastModified.toISOString() });
     } catch (error) {
       console.error('Error saving menu:', error);
       res.status(500).json({ error: 'Failed to save menu', message: error.message });
+    }
+  });
+
+  // GET /api/menu/history — list version history (lightweight, no menu payload)
+  router.get('/api/menu/history', requireAuth, async (req, res) => {
+    try {
+      const userId = req.user.sub;
+      const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+      const offset = parseInt(req.query.offset) || 0;
+
+      const { resources } = await container.items.query({
+        query: `SELECT c.version, c.updatedAt FROM c
+                WHERE c.type = 'menu-history' AND c.userId = @userId
+                ORDER BY c.version DESC
+                OFFSET @offset LIMIT @limit`,
+        parameters: [
+          { name: '@userId', value: userId },
+          { name: '@offset', value: offset },
+          { name: '@limit', value: limit },
+        ],
+      }).fetchAll();
+
+      res.json({ versions: resources });
+    } catch (error) {
+      console.error('Error fetching menu history:', error);
+      res.status(500).json({ error: 'Failed to fetch history', message: error.message });
+    }
+  });
+
+  // GET /api/menu/history/:version — fetch a specific historical version
+  router.get('/api/menu/history/:version', requireAuth, async (req, res) => {
+    try {
+      const userId = req.user.sub;
+      const version = parseInt(req.params.version);
+
+      if (isNaN(version)) {
+        return res.status(400).json({ error: 'Version must be a number' });
+      }
+
+      const { resource } = await container.item(historyId(userId, version), userId).read();
+
+      if (!resource) {
+        return res.status(404).json({ error: 'Version not found' });
+      }
+
+      res.json({
+        menu: resource.menu,
+        version: resource.version,
+        updatedAt: resource.updatedAt,
+      });
+    } catch (error) {
+      if (error.code === 404) {
+        return res.status(404).json({ error: 'Version not found' });
+      }
+      console.error('Error fetching menu version:', error);
+      res.status(500).json({ error: 'Failed to fetch version', message: error.message });
     }
   });
 

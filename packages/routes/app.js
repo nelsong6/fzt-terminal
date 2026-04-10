@@ -70,18 +70,6 @@ export function createATRoutes({ requireAuth, container }) {
       const newVersion = currentVersion + 1;
       const now = new Date().toISOString();
 
-      // Write history document for the previous state (if it exists)
-      if (currentDoc) {
-        await container.items.create({
-          id: historyId(userId, currentVersion),
-          userId,
-          type: 'menu-history',
-          menu: currentDoc.menu,
-          version: currentVersion,
-          updatedAt: currentDoc.updatedAt,
-        });
-      }
-
       // Build updated current document
       const newDoc = {
         id: menuId(userId),
@@ -100,6 +88,19 @@ export function createATRoutes({ requireAuth, container }) {
 
       try {
         const { resource } = await container.items.upsert(newDoc, options);
+
+        // Write history document for the previous state AFTER successful upsert
+        if (currentDoc) {
+          await container.items.create({
+            id: historyId(userId, currentVersion),
+            userId,
+            type: 'menu-history',
+            menu: currentDoc.menu,
+            version: currentVersion,
+            updatedAt: currentDoc.updatedAt,
+          });
+        }
+
         res.json({
           menu: resource.menu,
           updatedAt: resource.updatedAt,
@@ -108,7 +109,7 @@ export function createATRoutes({ requireAuth, container }) {
         });
       } catch (error) {
         if (error.code === 412) {
-          // Etag mismatch — someone else wrote
+          // Etag mismatch — someone else wrote, no history written
           const { resource: current } = await container.item(menuId(userId), userId).read();
           return res.status(409).json({
             error: 'Conflict detected',

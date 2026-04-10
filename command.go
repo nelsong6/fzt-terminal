@@ -7,7 +7,10 @@ package terminal
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/nelsong6/fzt/core"
 )
@@ -25,8 +28,8 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 	hasFrontend := s.FrontendName != ""
 
 	coreVerStr := coreVersion
-	if coreVerStr == "" {
-		coreVerStr = "dev"
+	if coreVerStr == "" || coreVerStr == "dev" {
+		coreVerStr = "ERROR: use go run ./build"
 	}
 
 	// Build version registry — each entry gets an index that "on" buttons reference
@@ -34,8 +37,8 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 	if hasFrontend {
 		feLabel := s.FrontendName
 		feVer := s.FrontendVersion
-		if feVer == "" {
-			feVer = "unknown"
+		if feVer == "" || feVer == "UNSET" {
+			feVer = "ERROR: use go run ./build"
 		}
 		s.VersionRegistry = append(s.VersionRegistry, feLabel+" "+feVer) // index 0: frontend
 		s.VersionRegistry = append(s.VersionRegistry, "fzt "+coreVerStr) // index 1: engine
@@ -55,7 +58,7 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 	if hasFrontend {
 		items = buildTwoLevelCommandTree(s, ctlFolderIdx, 0, 1) // feIdx=0, coreIdx=1
 	} else {
-		items = buildCoreLevelCommandTree(ctlFolderIdx, 0) // coreIdx=0
+		items = buildCoreLevelCommandTree(s.VersionRegistry, ctlFolderIdx, 0) // coreIdx=0
 	}
 
 	ctx.AllItems = append(ctx.AllItems, items...)
@@ -64,19 +67,23 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 
 // buildCoreLevelCommandTree builds `:` → core commands directly (no frontend layer).
 // versionIdx is the index into State.VersionRegistry for this level's version string.
-func buildCoreLevelCommandTree(ctlFolderIdx int, versionIdx int) []core.Item {
+func buildCoreLevelCommandTree(registry []string, ctlFolderIdx int, versionIdx int) []core.Item {
 	idx := ctlFolderIdx + 1
 
-	versionFolderIdx := idx
-	idx++
-	versionOnIdx := idx
-	idx++
-	versionOffIdx := idx
+	versionItemIdx := idx
 	idx++
 	updateIdx := idx
+	idx++
+	updatetimerIdx := idx
+	idx++
+	validateIdx := idx
 
-	ctlChildren := []int{versionFolderIdx, updateIdx}
-	idxStr := fmt.Sprintf("%d", versionIdx)
+	ctlChildren := []int{versionItemIdx, updateIdx, updatetimerIdx, validateIdx}
+
+	versionDesc := ""
+	if versionIdx >= 0 && versionIdx < len(registry) {
+		versionDesc = registry[versionIdx]
+	}
 
 	return []core.Item{
 		{
@@ -84,13 +91,12 @@ func buildCoreLevelCommandTree(ctlFolderIdx int, versionIdx int) []core.Item {
 			ParentIdx: -1, Children: ctlChildren, Hidden: true,
 		},
 		{
-			Fields: []string{"version", "Show/hide version in title bar"}, Depth: 1,
-			HasChildren: true, ParentIdx: ctlFolderIdx,
-			Children: []int{versionOnIdx, versionOffIdx},
+			Fields: []string{"version", versionDesc}, Depth: 1,
+			ParentIdx: ctlFolderIdx,
 		},
-		{Fields: []string{"on", "Show version", idxStr}, Depth: 2, ParentIdx: versionFolderIdx},
-		{Fields: []string{"off", "Hide version"}, Depth: 2, ParentIdx: versionFolderIdx},
 		{Fields: []string{"update", "Update fzt to latest release"}, Depth: 1, ParentIdx: ctlFolderIdx},
+		{Fields: []string{"updatetimer", "Show time to next sync check"}, Depth: 1, ParentIdx: ctlFolderIdx},
+		{Fields: []string{"validate", "Validate credential store"}, Depth: 1, ParentIdx: ctlFolderIdx},
 	}
 }
 
@@ -99,21 +105,15 @@ func buildCoreLevelCommandTree(ctlFolderIdx int, versionIdx int) []core.Item {
 //
 // Index allocation: the function pre-allocates contiguous index ranges for all items
 // before building the slice. Starting from ctlFolderIdx+1, it reserves indices for:
-// version folder (3), whoami folder (3), each FrontendCommand + its Children,
+// version (1), whoami folder (3), each FrontendCommand + its Children,
 // and the core subfolder. Items must be appended in the same order as indices were reserved.
 func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreIdx int) []core.Item {
 	idx := ctlFolderIdx + 1
 	var ctlChildren []int
 
-	feIdxStr := fmt.Sprintf("%d", feIdx)
-	coreIdxStr := fmt.Sprintf("%d", coreIdx)
-
-	feVersionFolderIdx := idx
-	ctlChildren = append(ctlChildren, feVersionFolderIdx)
-	idx++
-	feVersionOnIdx := idx
-	idx++
-	feVersionOffIdx := idx
+	// frontend version — single toggle leaf
+	feVersionIdx := idx
+	ctlChildren = append(ctlChildren, feVersionIdx)
 	idx++
 
 	// whoami folder
@@ -135,16 +135,21 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreId
 	ctlChildren = append(ctlChildren, coreSubfolderIdx)
 	idx++
 
-	coreVersionFolderIdx := idx
-	coreSubChildren := []int{coreVersionFolderIdx}
-	idx++
-	coreVersionOnIdx := idx
-	idx++
-	coreVersionOffIdx := idx
+	// core version — single toggle leaf
+	coreVersionIdx := idx
+	coreSubChildren := []int{coreVersionIdx}
 	idx++
 
 	coreUpdateIdx := idx
 	coreSubChildren = append(coreSubChildren, coreUpdateIdx)
+	idx++
+
+	coreUpdatetimerIdx := idx
+	coreSubChildren = append(coreSubChildren, coreUpdatetimerIdx)
+	idx++
+
+	coreValidateIdx := idx
+	coreSubChildren = append(coreSubChildren, coreValidateIdx)
 
 	var items []core.Item
 
@@ -153,13 +158,15 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreId
 		ParentIdx: -1, Children: ctlChildren, Hidden: true,
 	})
 
+	// Frontend version toggle — description shows the version string
+	feVersionDesc := ""
+	if feIdx >= 0 && feIdx < len(s.VersionRegistry) {
+		feVersionDesc = s.VersionRegistry[feIdx]
+	}
 	items = append(items, core.Item{
-		Fields: []string{"version", "Show/hide version in title bar"}, Depth: 1,
-		HasChildren: true, ParentIdx: ctlFolderIdx,
-		Children: []int{feVersionOnIdx, feVersionOffIdx},
+		Fields: []string{"version", feVersionDesc}, Depth: 1,
+		ParentIdx: ctlFolderIdx,
 	})
-	items = append(items, core.Item{Fields: []string{"on", "Show version", feIdxStr}, Depth: 2, ParentIdx: feVersionFolderIdx})
-	items = append(items, core.Item{Fields: []string{"off", "Hide version"}, Depth: 2, ParentIdx: feVersionFolderIdx})
 
 	identityIdxStr := fmt.Sprintf("%d", len(s.VersionRegistry)-1)
 	items = append(items, core.Item{
@@ -195,15 +202,19 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreId
 		HasChildren: true, ParentIdx: ctlFolderIdx, Children: coreSubChildren,
 	})
 
+	// Core version toggle — description shows the engine version string
+	coreVersionDesc := ""
+	if coreIdx >= 0 && coreIdx < len(s.VersionRegistry) {
+		coreVersionDesc = s.VersionRegistry[coreIdx]
+	}
 	items = append(items, core.Item{
-		Fields: []string{"version", "Show/hide version in title bar"}, Depth: 2,
-		HasChildren: true, ParentIdx: coreSubfolderIdx,
-		Children: []int{coreVersionOnIdx, coreVersionOffIdx},
+		Fields: []string{"version", coreVersionDesc}, Depth: 2,
+		ParentIdx: coreSubfolderIdx,
 	})
-	items = append(items, core.Item{Fields: []string{"on", "Show version", coreIdxStr}, Depth: 3, ParentIdx: coreVersionFolderIdx})
-	items = append(items, core.Item{Fields: []string{"off", "Hide version"}, Depth: 3, ParentIdx: coreVersionFolderIdx})
 
 	items = append(items, core.Item{Fields: []string{"update", "Update fzt to latest release"}, Depth: 2, ParentIdx: coreSubfolderIdx})
+	items = append(items, core.Item{Fields: []string{"updatetimer", "Show time to next sync check"}, Depth: 2, ParentIdx: coreSubfolderIdx})
+	items = append(items, core.Item{Fields: []string{"validate", "Validate credential store"}, Depth: 2, ParentIdx: coreSubfolderIdx})
 
 	return items
 }
@@ -217,11 +228,19 @@ func HandleCommandAction(s *core.State, item core.Item) string {
 	name := item.Fields[0]
 
 	switch name {
+	case "version":
+		// Toggle: if title already shows this version, clear it; otherwise set it
+		if len(item.Fields) >= 2 && item.Fields[1] != "" {
+			ver := item.Fields[1]
+			if s.TitleOverride == ver {
+				s.ClearTitle()
+			} else {
+				s.SetTitle(ver, 1)
+			}
+		}
+		return ""
 	case "on":
-		// "on" items store their VersionRegistry index in Fields[2]. This is how
-		// identical "on" names under different parents (version vs whoami) produce
-		// different results — each references a different registry index.
-		// Ancestor search disambiguates which "on" the user selected (see scorer.go).
+		// "on" items store their VersionRegistry index in Fields[2] (used by whoami).
 		if len(item.Fields) >= 3 {
 			idx, err := strconv.Atoi(item.Fields[2])
 			if err == nil && idx >= 0 && idx < len(s.VersionRegistry) {
@@ -231,6 +250,72 @@ func HandleCommandAction(s *core.State, item core.Item) string {
 		return ""
 	case "off":
 		s.VersionDisplay = ""
+		return ""
+	case "updatetimer":
+		if s.SyncTimerShown {
+			s.ClearTitle()
+		} else {
+			s.SyncTimerShown = true
+		}
+		return ""
+	case "validate":
+		HandleValidate(s)
+		return ""
+	case "load-nelson", "load-nelson-ea", "load-nelson-r1":
+		identity := strings.TrimPrefix(name, "load-")
+		if s.ConfigDir == "" {
+			s.SetTitle("no config directory set", 2)
+			return ""
+		}
+		if err := os.WriteFile(filepath.Join(s.ConfigDir, ".identity"), []byte(identity), 0644); err != nil {
+			s.SetTitle(fmt.Sprintf("failed to write identity: %v", err), 2)
+			return ""
+		}
+		s.IdentityLabel = identity
+		// Auto-sync after loading identity
+		secret := s.JWTSecret
+		if secret == "" {
+			var err error
+			secret, err = ReadJWTSecret()
+			if err != nil {
+				s.SetTitle(err.Error(), 2)
+				return ""
+			}
+			s.JWTSecret = secret
+		}
+		if _, err := SyncMenu(s.ConfigDir, secret); err != nil {
+			s.SetTitle(fmt.Sprintf("loaded %s but sync failed: %v", identity, err), 2)
+			return ""
+		}
+		return "loaded"
+	case "unload":
+		if s.ConfigDir != "" {
+			os.Remove(filepath.Join(s.ConfigDir, ".identity"))
+			os.Remove(filepath.Join(s.ConfigDir, "menu-cache.yaml"))
+		}
+		return "unloaded"
+	case "sync":
+		if s.ConfigDir == "" {
+			s.SetTitle("no config directory set", 2)
+			return ""
+		}
+		secret := s.JWTSecret
+		if secret == "" {
+			var err error
+			secret, err = ReadJWTSecret()
+			if err != nil {
+				s.SetTitle(err.Error(), 2)
+				return ""
+			}
+			s.JWTSecret = secret
+		}
+		count, err := SyncMenu(s.ConfigDir, secret)
+		if err != nil {
+			s.SetTitle(err.Error(), 2)
+			return ""
+		}
+		identityName, _ := ReadTrimmedFile(filepath.Join(s.ConfigDir, ".identity"))
+		s.SetTitle(fmt.Sprintf("synced %d items for %s", count, identityName), 1)
 		return ""
 	case "update":
 		return "update"

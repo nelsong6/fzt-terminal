@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/nelsong6/fzt/core"
@@ -178,6 +179,9 @@ func applyFrontendConfig(s *core.State, cfg Config) {
 	if cfg.Provider != nil {
 		s.Provider = cfg.Provider
 	}
+	if cfg.ConfigDir != "" {
+		s.ConfigDir = cfg.ConfigDir
+	}
 }
 
 // runWithSession renders directly to a tcell screen, supporting tree mode + search switching.
@@ -197,6 +201,20 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 
 	canvas := &tcellCanvas{screen: screen}
 
+	// Background sync check — runs once if overdue
+	initSyncCheck(s, cfg, func() {
+		screen.PostEvent(tcell.NewEventInterrupt(nil))
+	})
+
+	// 1-second heartbeat for live countdown display
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	go func() {
+		for range ticker.C {
+			screen.PostEvent(tcell.NewEventInterrupt(nil))
+		}
+	}()
+
 	for {
 		screen.Clear()
 		w, h := screen.Size()
@@ -213,6 +231,10 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 				// handled internally (e.g. version toggle)
 			case action == "cancel" || action == "abort":
 				return "", nil
+			case action == "unloaded":
+				return "unloaded", nil
+			case action == "loaded":
+				return "loaded", nil
 			case action == "update":
 				screen.Fini()
 				RunUpdate()
@@ -225,6 +247,8 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 			}
 		case *tcell.EventResize:
 			screen.Sync()
+		case *tcell.EventInterrupt:
+			// tick — redraw picks up countdown updates from drawUnified
 		}
 	}
 }
@@ -487,7 +511,7 @@ func drawReverse(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 
 	borderOffset := 0
 	if cfg.Border {
-		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, s.VersionDisplay, cfg.Label)
+		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, s.VersionDisplay, 0, "", cfg.Label)
 		y++
 		borderOffset = 1
 	}
@@ -598,7 +622,7 @@ func drawDefault(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 
 	borderOffset := 0
 	if cfg.Border {
-		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, s.VersionDisplay, cfg.Label)
+		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, s.VersionDisplay, 0, "", cfg.Label)
 		y++
 		borderOffset = 1
 	}
@@ -807,10 +831,10 @@ func drawText(c render.Canvas, x, y int, text string, style tcell.Style, maxW in
 }
 
 func drawBorderTop(c render.Canvas, w, y int) {
-	drawBorderTopWithTitle(c, w, y, "", "", "")
+	drawBorderTopWithTitle(c, w, y, "", "", "", 0, "")
 }
 
-func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, version string, label ...string) {
+func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, version string, titleStyleHint int, syncIcon string, label ...string) {
 	borderStyle := tcell.StyleDefault.Foreground(BorderFg)
 	c.SetContent(0, y, '\u250c', nil, borderStyle)
 	for x := 1; x < w-1; x++ {
@@ -839,10 +863,17 @@ func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, versio
 		if startX < 2 {
 			startX = 2
 		}
-		titleStyle := tcell.StyleDefault.Foreground(TitleFg).Bold(true)
+		titleFg := TitleFg
+		switch titleStyleHint {
+		case 1:
+			titleFg = TitleSuccessFg
+		case 2:
+			titleFg = TitleErrorFg
+		}
+		tStyle := tcell.StyleDefault.Foreground(titleFg).Bold(true)
 		c.SetContent(startX, y, ' ', nil, borderStyle)
 		for i, r := range titleRunes {
-			c.SetContent(startX+1+i, y, r, nil, titleStyle)
+			c.SetContent(startX+1+i, y, r, nil, tStyle)
 		}
 		c.SetContent(startX+1+len(titleRunes), y, ' ', nil, borderStyle)
 	}
@@ -858,6 +889,20 @@ func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, versio
 				c.SetContent(vStart+1+i, y, r, nil, vStyle)
 			}
 			c.SetContent(vStart+1+len(vRunes), y, ' ', nil, borderStyle)
+		}
+	}
+
+	// Sync icon pinned to top-right of border (takes priority over version)
+	if syncIcon != "" {
+		iRunes := []rune(syncIcon)
+		iStart := w - len(iRunes) - 3
+		if iStart > 2 {
+			iStyle := tcell.StyleDefault.Foreground(SyncIconFg)
+			c.SetContent(iStart, y, ' ', nil, borderStyle)
+			for i, r := range iRunes {
+				c.SetContent(iStart+1+i, y, r, nil, iStyle)
+			}
+			c.SetContent(iStart+1+len(iRunes), y, ' ', nil, borderStyle)
 		}
 	}
 

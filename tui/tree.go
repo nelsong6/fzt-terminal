@@ -1,12 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/nelsong6/fzt/core"
 	"github.com/nelsong6/fzt/render"
-	terminal "github.com/nelsong6/fzt-terminal"
 )
 
 
@@ -23,19 +24,50 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	y := startY
 
 	if cfg.Border {
-		versionStr := ""
-		versionStr = s.VersionDisplay
+		versionStr := s.VersionDisplay
 		title := cfg.Title
-		if ctlTitle := terminal.ScopeCtlTitle(s); ctlTitle != "" {
-			title = ctlTitle
+		titleStyle := 0
+		// TitleOverride always takes priority — it's an explicit message
+		if s.TitleOverride != "" {
+			title = s.TitleOverride
+			titleStyle = s.TitleStyle
+		} else if s.SyncTimerShown && s.SyncNextCheck > 0 {
+			remaining := s.SyncNextCheck - time.Now().Unix()
+			if remaining < 0 {
+				remaining = 0
+			}
+			m := remaining / 60
+			sec := remaining % 60
+			title = fmt.Sprintf("next sync check: %dm %02ds", m, sec)
 		}
-		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, versionStr, cfg.Label)
+		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, versionStr, titleStyle, s.SyncIcon, cfg.Label)
 		y++
 		borderOffset = 1
 	}
 
 	hasQuery := len(ctx.Query) > 0
 	visible := core.TreeVisibleItems(s)
+
+	// Compute effective name column width from visible items.
+	// Each row needs: indent + name + gap. We find the max absolute width
+	// (indent + max(nameLen+1, NameColWidth+ColGap-indent)) so all descriptions align.
+	effectiveNameCol := ctx.NameColWidth + ctx.ColGap
+	if effectiveNameCol < 12 {
+		effectiveNameCol = 12 // minimum so headers don't collapse
+	}
+	for _, row := range visible {
+		indent := row.Item.Depth * 2
+		nameW := ctx.NameColWidth + ctx.ColGap - indent
+		if len(row.Item.Fields) > 0 {
+			nameLen := len([]rune(row.Item.Fields[0])) + 1
+			if nameLen > nameW {
+				nameW = nameLen
+			}
+		}
+		if nameW+indent > effectiveNameCol {
+			effectiveNameCol = nameW + indent
+		}
+	}
 
 	// Prompt bar -- bordered input field, the primary UI element
 	promptBg := PromptSurfaceBg
@@ -142,13 +174,10 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	// Headers
 	if len(ctx.Headers) > 0 {
 		hdrStyle := tcell.StyleDefault.Foreground(HeaderFg).Bold(true)
-		x := borderOffset + 2
+		x := borderOffset + 5 // match tree row layout: 2 selection + 2 icon + 1 buffer
 		for fi, hdr := range ctx.Headers[0].Fields {
-			colW := ctx.NameColWidth + ctx.ColGap
+			colW := effectiveNameCol
 			if fi > 0 {
-				if cfg.Tiered {
-					x += 2
-				}
 				colW = 0
 			}
 			drawText(c, x, y, hdr, hdrStyle, w-x-borderOffset)
@@ -194,7 +223,7 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 		row := visible[vi]
 		isSelected := vi == ctx.TreeCursor
 		isTopMatch := hasQuery && row.ItemIdx == topMatchIdx && !isSelected
-		drawTreeRow(c, row, isSelected, isTopMatch, ctx, cfg, borderOffset, y+i, w)
+		drawTreeRow(c, row, isSelected, isTopMatch, ctx, cfg, borderOffset, y+i, w, effectiveNameCol)
 	}
 
 	if cfg.Border {
@@ -204,7 +233,7 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 }
 
 // drawTreeRow renders a single tree item row.
-func drawTreeRow(c render.Canvas, row core.TreeRow, isSelected, isTopMatch bool, ctx *core.TreeContext, cfg Config, borderOffset, y, w int) {
+func drawTreeRow(c render.Canvas, row core.TreeRow, isSelected, isTopMatch bool, ctx *core.TreeContext, cfg Config, borderOffset, y, w, effectiveNameCol int) {
 	// Fill background
 	if isSelected || isTopMatch {
 		bg := tcell.StyleDefault.Background(SelectionBg)
@@ -279,7 +308,7 @@ func drawTreeRow(c render.Canvas, row core.TreeRow, isSelected, isTopMatch bool,
 		nameStyle = nameStyle.Background(SelectionBg)
 	}
 
-	nameWidth := ctx.NameColWidth + ctx.ColGap - indent
+	nameWidth := effectiveNameCol - indent
 	nameRunes := []rune(name)
 	if nameWidth < len(nameRunes)+1 {
 		nameWidth = len(nameRunes) + 1

@@ -43,4 +43,7 @@ var (
 	VersionFg      = tcell.ColorDarkGray
 	LabelFg        = tcell.ColorDarkGray
 	PathFg         = tcell.ColorDarkGray
+	TitleSuccessFg = tcell.ColorGreen
+	TitleErrorFg   = tcell.ColorRed
+	SyncIconFg     = tcell.ColorYellow
 )

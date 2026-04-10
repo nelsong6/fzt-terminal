@@ -59,15 +59,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	items, err := core.LoadYAML(yamlPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "fzt-automate: %v\n", err)
-		os.Exit(1)
+	configDir := filepath.Dir(yamlPath)
+	cacheFile := filepath.Join(configDir, "menu-cache.yaml")
+
+	var items []core.Item
+	if _, err := os.Stat(cacheFile); err == nil {
+		items, err = core.LoadYAML(cacheFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "fzt-automate: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// Read loaded identity for whoami display
 	identity := ""
-	identityFile := filepath.Join(filepath.Dir(yamlPath), ".identity")
+	identityFile := filepath.Join(configDir, ".identity")
 	if data, err := os.ReadFile(identityFile); err == nil {
 		identity = strings.TrimSpace(string(data))
 	}
@@ -91,14 +97,15 @@ func main() {
 		FrontendName:    "automate",
 		FrontendVersion: render.Version,
 		InitialDisplay:  identity,
+		ConfigDir:       configDir,
 		FrontendCommands: []core.CommandItem{
 			{Name: "load", Description: "Load an identity profile", Children: []core.CommandItem{
 				{Name: "load-nelson", Description: "Personal account", Action: "load-nelson"},
 				{Name: "load-nelson-ea", Description: "Engineered Arts", Action: "load-nelson-ea"},
 				{Name: "load-nelson-r1", Description: "R1", Action: "load-nelson-r1"},
 			}},
-			{Name: "setsecret", Description: "Set JWT signing secret", Action: "setsecret"},
-			{Name: "syncbookmarks", Description: "Sync bookmarks from cloud", Action: "syncbookmarks"},
+			{Name: "unload", Description: "Clear loaded identity", Action: "unload"},
+			{Name: "sync", Description: "Sync menu from cloud", Action: "sync"},
 		},
 	}
 
@@ -109,6 +116,16 @@ func main() {
 	}
 
 	if result == "" {
+		os.Exit(130)
+	}
+
+	if result == "unloaded" {
+		fmt.Fprintln(os.Stderr, "identity unloaded")
+		os.Exit(130)
+	}
+
+	if result == "loaded" {
+		fmt.Fprintln(os.Stderr, "synced — reopen to see menu")
 		os.Exit(130)
 	}
 

@@ -7,24 +7,28 @@ Ecosystem repo for fzt interactive tools. Provides everything that makes fzt vis
 ```
 fzt (engine)                    fzt-terminal (this repo)
   core.State, core.HandleKey      command.go      -- command palette, identity, action routing
-  core.TreeContext, scoring        tui/            -- terminal renderer (tcell + raw TTY)
-  render.Canvas, render.Session   web/            -- browser renderer (JS + CSS)
-  core.LoadYAML                   cmd/wasm/       -- WASM bridge (Go -> JS)
+  core.TreeContext, scoring        credential.go   -- credential store (go-keyring)
+  render.Canvas, render.Session   sync.go         -- API sync, JWT minting, menu-cache.yaml
+  core.LoadYAML                   tui/            -- terminal renderer (tcell + raw TTY)
+                                  web/            -- browser renderer (JS + CSS)
+                                  cmd/wasm/       -- WASM bridge (Go -> JS)
                                   cmd/automate/   -- shell automation binary
                                   build/          -- build script with version injection
 ```
 
 ## Package guide
 
-### `terminal` (root package, `command.go`)
+### `terminal` (root package, `command.go`, `credential.go`, `sync.go`)
 
 Shared frontend behavior imported by every fzt app:
 
 - **`InjectCommandFolder`** -- appends the hidden `:` command folder to the item tree. Single-level (`:` -> core commands) when no frontend is registered; two-level (`:` -> frontend commands + `::` -> core commands) when `FrontendName` is set.
-- **`HandleCommandAction`** -- routes leaf selections in the command tree. Version "on" reads a registry index from Fields[2] to look up the version string from `State.VersionRegistry`. "off" clears `VersionDisplay`. Frontend commands matched by name → action string.
-- **`EngineVersion`** -- module-level var set via ldflags. Used in the version registry for the `::` core level.
+- **`HandleCommandAction`** -- routes leaf selections in the command tree. Handles version toggle (single leaf that flips TitleOverride and shows the version string in its description), validate, updatetimer, sync, and internalized shell commands (load-*, unload). Frontend commands matched by name -> action string.
+- **`EngineVersion`** -- module-level var injected via ldflags from the build script (reads fzt engine version from go.mod or git describe for local replace).
 - **`IsInCommandScope` / `ScopeCtlTitle`** -- scope awareness for renderers (show "fzt ctl" vs "<frontend> ctl" in the title bar).
 - **`ApplyConfig`** -- sets frontend identity (name, version, commands) from Config onto State before command injection.
+- **`HandleValidate` / `ReadJWTSecret`** (`credential.go`) -- credential store integration via go-keyring (Windows Credential Manager / KWallet / macOS Keychain). HandleValidate is invoked from the validate command in the `::` core palette.
+- **`sync.go`** (root package) -- API-backed menu sync. JWT minting, API fetching (`/api/menu`), YAML serialization to `menu-cache.yaml`. Called by the sync command and auto-sync on load.
 
 ### `tui/` -- Terminal renderer
 
@@ -32,8 +36,9 @@ Full-screen and inline TUI rendering via tcell. Key files:
 
 | File | Purpose |
 |------|---------|
-| `tui.go` | Entry points: `Run` (full-screen), `RunInline` (inline), `NewSession`/`NewTreeSession` (headless), `Simulate` (testing). Layout functions: `drawDefault`, `drawReverse`, `drawUnified` (tree mode). |
-| `tree.go` | Unified tree renderer: `drawUnified` draws prompt bar + tree as a single navigation surface. `drawTreeRow` renders individual rows with icons, indentation, match highlighting. |
+| `tui.go` | Entry points: `Run` (full-screen), `RunInline` (inline), `NewSession`/`NewTreeSession` (headless), `Simulate` (testing). Layout functions: `drawDefault`, `drawReverse`, `drawUnified` (tree mode). `drawBorderTopWithTitle` renders the title bar with titleStyleHint (0=default, 1=green, 2=red) and syncIcon parameters. |
+| `tree.go` | Unified tree renderer: `drawUnified` draws prompt bar + tree as a single navigation surface. `drawTreeRow` renders individual rows with icons, indentation, match highlighting. Headers start at borderOffset+5 to match tree row layout (2 selection + 2 icon + 1 buffer). Dynamic effectiveNameCol computed from visible items. |
+| `sync.go` | Background sync check: `initSyncCheck`, `checkBookmarkStaleness`. 1-second ticker goroutine posts `tcell.EventInterrupt` for live redraws. 20-minute sync interval with `.last-sync-check` file. SyncIcon rendering (yellow icon in top-right corner). |
 | `style.go` | Semantic color constants (Catppuccin Mocha palette mapped to tcell colors). CSS equivalents documented in comments. |
 | `canvas.go` | `tcellCanvas` wraps `tcell.Screen` to satisfy `render.Canvas`. |
 | `inline.go` | `RunInline` -- renders TUI inline in the terminal buffer (no alternate screen) using raw ANSI escape sequences + `MemScreen`. Used when `--height` is specified. |
@@ -75,7 +80,7 @@ Usage: `fzt-automate --yaml <path> [--title "..."] [--header "Name\tDescription"
 
 ### `build/` -- Build script
 
-`go run ./build` builds the native automate binary with version injection via ldflags (`-X github.com/nelsong6/fzt/render.Version=<git describe>`). `go run ./build wasm` builds the WASM binary.
+`go run ./build` builds the native automate binary with version injection via ldflags (`-X render.Version=<git describe>` and `-X terminal.EngineVersion=<fzt engine version from go.mod or git describe for local replace>`). `go run ./build wasm` builds the WASM binary.
 
 ## Style system
 
@@ -87,14 +92,14 @@ Usage: `fzt-automate --yaml <path> [--title "..."] [--header "Name\tDescription"
 
 The `:` item is a hidden folder injected into every fzt app's item tree.
 
-- **No frontend registered** (`FrontendName == ""`): `:` -> core commands (version on/off, update).
+- **No frontend registered** (`FrontendName == ""`): `:` -> core commands (version toggle, validate, updatetimer, sync, update).
 - **Frontend registered**: `:` -> frontend commands + `::` subfolder -> core commands. The frontend registers commands via `State.FrontendCommands` or WASM `fzt.addCommands()`.
 
 The prompt shows scope breadcrumbs when inside command folders. `ScopeCtlTitle` returns "fzt ctl" at `::` depth or "<frontend> ctl" at `:` depth.
 
 ### Disambiguation of on/off leaves
 
-The command tree contains multiple items named "on" and "off" (under `version`, `whoami`, core `version`). These are NOT ambiguous -- fzt's ancestor matching lets users type "whoami on" or "version off" to reach the exact item. Each "on" item stores a different `VersionRegistry` index in `Fields[2]`, so `HandleCommandAction` sets the correct display string regardless. See `fzt/core/scorer.go` ScoreItem comment for the design rationale. Never rename these to be unique.
+The command tree may contain multiple items named "on" and "off" (e.g. under `whoami`). These are NOT ambiguous -- fzt's ancestor matching lets users type "whoami on" to reach the exact item. Note: `version` is now a single toggle leaf (not a folder with on/off children); selecting it flips TitleOverride and its description shows the version string. See `fzt/core/scorer.go` ScoreItem comment for the design rationale. Never rename on/off items to be unique.
 
 ### FrontendCommands nesting
 

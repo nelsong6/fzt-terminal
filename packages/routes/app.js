@@ -91,7 +91,7 @@ export function createATRoutes({ requireAuth, container }) {
 
         // Write history document for the previous state AFTER successful upsert
         if (currentDoc) {
-          await container.items.create({
+          await container.items.upsert({
             id: historyId(userId, currentVersion),
             userId,
             type: 'menu-history',

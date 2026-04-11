@@ -22,13 +22,13 @@ fzt (engine)                    fzt-terminal (this repo)
 
 Shared frontend behavior imported by every fzt app:
 
-- **`InjectCommandFolder`** -- appends the hidden `:` command folder to the item tree. Single-level (`:` -> core commands) when no frontend is registered; two-level (`:` -> frontend commands + `::` -> core commands) when `FrontendName` is set.
-- **`HandleCommandAction`** -- routes leaf selections in the command tree. Handles version toggle (single leaf that flips TitleOverride and shows the version string in its description), validate, updatetimer, sync, and internalized shell commands (load-*, unload). Frontend commands matched by name -> action string.
+- **`InjectCommandFolder`** -- appends the hidden `:` command folder to the item tree. Single-level (`:` -> core commands) when no frontend is registered; two-level (`:` -> frontend commands + `::` -> core commands) when `FrontendName` is set. Skips injection if palette already exists in loaded cache (data-driven mode).
+- **`HandleCommandAction`** -- routes leaf selections in the command tree by `Item.Action.Target` (stable command identifier) with fallback to `Fields[0]`. Handles version toggle, validate, updatetimer, sync, edit modes (add-after, add-folder, rename, delete, inspect, save), and internalized shell commands (load-*, unload). Frontend commands matched by name or action string.
 - **`EngineVersion`** -- module-level var injected via ldflags from the build script (reads fzt engine version from go.mod or git describe for local replace).
 - **`IsInCommandScope` / `ScopeCtlTitle`** -- scope awareness for renderers (show "fzt ctl" vs "<frontend> ctl" in the title bar).
 - **`ApplyConfig`** -- sets frontend identity (name, version, commands) from Config onto State before command injection.
 - **`HandleValidate` / `ReadJWTSecret`** (`credential.go`) -- credential store integration via go-keyring (Windows Credential Manager / KWallet / macOS Keychain). HandleValidate is invoked from the validate command in the `::` core palette.
-- **`sync.go`** (root package) -- API-backed menu sync. JWT minting, API fetching (`/api/menu`), YAML serialization to `menu-cache.yaml`. Called by the sync command and auto-sync on load.
+- **`sync.go`** (root package) -- API-backed menu sync. JWT minting, API fetching (`/api/menu`), YAML serialization to `menu-cache.yaml`. `SyncMenu` fetches and caches the menu (returns item count, version, error). `SaveMenu` PUTs the menu tree with conflict detection via `baseVersion` (409 on stale). Both persist the version number to `.menu-version` for next launch.
 
 ### `tui/` -- Terminal renderer
 
@@ -107,11 +107,13 @@ The command tree may contain multiple items named "on" and "off" (e.g. under `wh
 
 ### Startup flow (terminal -- `tui.Run`)
 
-1. `tui.Run(items, cfg)` -- creates tcell screen, delegates to `runWithSession` if TreeMode
-2. `core.NewState(items, cfg)` -- creates root context with AllItems
-3. `applyFrontendConfig(s, cfg)` -- copies FrontendName/Version/Commands to State
-4. `terminal.InjectCommandFolder(s, EngineVersion)` -- appends hidden `:` folder
-5. Render loop: `drawUnified` -> `PollEvent` -> `HandleUnifiedKey` -> `processAction` -> repeat
+1. Items loaded from `menu-cache.yaml` (synced from `/api/menu` endpoint) instead of static root.yaml
+2. `tui.Run(items, cfg)` -- creates tcell screen, delegates to `runWithSession` if TreeMode
+3. `core.NewState(items, cfg)` -- creates root context with AllItems
+4. `applyFrontendConfig(s, cfg)` -- copies FrontendName/Version/Commands to State
+5. `terminal.InjectCommandFolder(s, EngineVersion)` -- appends hidden `:` folder
+6. `initSyncCheck` -- starts 1-second ticker goroutine that posts `tcell.EventInterrupt` for live redraws; checks bookmark staleness on a 20-minute interval
+7. Render loop: `drawUnified` -> `PollEvent` -> `HandleUnifiedKey` -> `processAction` -> repeat. Title bar is a dynamic status area managed via `State.SetTitle`/`ClearTitle`.
 
 ### Startup flow (WASM -- `cmd/wasm/main.go`)
 
@@ -127,11 +129,13 @@ The pending* variables buffer config because InjectCommandFolder runs during ini
 
 All key/click handlers return an action string:
 
-- `""` -- handled internally (version toggle, scope change)
+- `""` -- handled internally (version toggle, validate, updatetimer, sync, scope change)
 - `"cancel"` -- user quit (Ctrl+C, Escape from root)
 - `"select:<output>"` -- leaf selected. Output is the formatted item fields per AcceptNth.
 - `"update"` -- user selected the fzt self-update command
-- Any other string -- frontend command action (e.g., `"edit"`, `"copy-yaml"`, `"load-nelson"`)
+- `"loaded"` -- load-* command completed (auto-syncs and exits)
+- `"unloaded"` -- unload command completed (clears cache and exits)
+- Any other string -- frontend command action (e.g., `"edit"`, `"copy-yaml"`)
 
 ### Cross-repo references
 
@@ -144,6 +148,7 @@ All key/click handlers return an action string:
 
 - `github.com/nelsong6/fzt v0.1.30` -- engine (state, scoring, tree logic, YAML parsing, render abstractions)
 - `github.com/gdamore/tcell/v2` -- terminal screen library
+- `github.com/zalando/go-keyring` -- credential store (Windows Credential Manager / KWallet / macOS Keychain)
 - `golang.org/x/term` -- raw terminal mode
 - `golang.org/x/sys` -- Windows console API
 
@@ -161,7 +166,7 @@ go run ./build wasm
 GOOS=js GOARCH=wasm go build -o fzt.wasm ./cmd/wasm
 ```
 
-The build script injects version from `git describe --tags --always --dirty` via ldflags.
+The build script injects `render.Version` from `git describe --tags --always --dirty` and `terminal.EngineVersion` from the fzt engine version in go.mod (or git describe for local replace) via ldflags.
 
 ## CI
 
@@ -177,3 +182,31 @@ GitHub Actions workflow (`.github/workflows/build.yml`) on push to main:
 - **Dual render paths**: ANSI-based (terminal + `fzt-terminal.js`) and structured data (DOM renderer via `getVisibleRows` etc.).
 - **Platform abstraction**: `rawreader_unix.go` / `rawreader_windows.go` handle TTY differences for inline mode.
 - **Type aliases**: `tui.Config`, `tui.Session`, `tui.SessionFrame` alias engine types so callers compile after refactors.
+- **Title bar as status area**: `State.SetTitle` / `ClearTitle` manage the title bar as a dynamic status area. TitleOverride always takes priority over ambient displays (timer, sync status). `drawBorderTopWithTitle` accepts titleStyleHint and syncIcon parameters.
+- **Background sync**: Ticker goroutine in tui/sync.go posts `tcell.EventInterrupt` for live redraws without blocking the event loop.
+- **Internalized shell commands**: load-*, unload, sync handled internally in HandleCommandAction -- no PowerShell function dependencies. load auto-syncs and exits; unload clears cache and exits.
+
+## Change log
+
+### 2026-04-09
+
+1. **Header alignment fix** -- Headers now start at borderOffset+5 to match tree row layout (2 selection + 2 icon + 1 buffer). Removed Tiered-specific +2 compensation. Dynamic effectiveNameCol computed from visible items.
+2. **Version rework** -- Version folder (with on/off children) replaced by single toggle leaf whose description shows the version string. Selecting toggles TitleOverride. EngineVersion now injected via ldflags in build script (no more "dev" fallback).
+3. **Console output line** -- Title bar repurposed as dynamic status area. drawBorderTopWithTitle accepts titleStyleHint (0=default, 1=green, 2=red) and syncIcon parameters. TitleOverride always takes priority over ambient displays (timer etc).
+4. **Background sync check** -- New tui/sync.go with initSyncCheck, checkBookmarkStaleness. 1-second ticker goroutine posts tcell.EventInterrupt for live redraws. 20-minute sync interval with .last-sync-check file.
+5. **Credential store integration** -- New credential.go with HandleValidate and ReadJWTSecret using go-keyring (Windows Credential Manager / KWallet / macOS Keychain). Validate command in :: core palette.
+6. **Internalized shell commands** -- load-*, unload, sync (formerly syncbookmarks) all handled internally in HandleCommandAction. No more PowerShell function dependencies. load auto-syncs and exits. unload clears cache and exits.
+7. **API-backed menu** -- Menu tree now loaded from menu-cache.yaml (synced from /api/menu endpoint) instead of static root.yaml. New sync.go in root package with JWT minting, API fetching, YAML serialization. Menu API endpoints added to my-homepage routes.
+8. **Build script EngineVersion injection** -- build/main.go now reads fzt engine version from go.mod (or git describe for local replace) and injects via ldflags alongside render.Version.
+9. **updatetimer command** -- In :: core palette, toggles live countdown to next sync check in title bar.
+10. **SyncIcon rendering** -- Yellow icon in top-right corner of border when sync is available.
+11. **SetTitle/ClearTitle** -- All title bar writes now go through State.SetTitle/ClearTitle which evict ambient displays.
+
+### 2026-04-10
+
+1. **Shortcuts system** -- Shift as the single modifier namespace. Shift+HJKL (vim nav with arrow feedback), Shift+S (sync), Shift+W (save), Shift+A (add after), Shift+F (add folder), Shift+R/I (inspect/edit properties), Shift+D (delete). Shift+Enter confirms action modes. Shift+Backspace resets navigation to home. Unknown shortcuts show red `?` in title bar. Shortcuts folder in `:` palette for discoverability.
+2. **Edit functionality** -- Add after, add folder, rename, delete, save via menu or shortcuts. Action mode pattern: enter mode, navigate, Shift+Enter confirms. Property inspection with gear icon items showing name/description/url/action. Inline text editing for property values. `●` dirty indicator in top-right when unsaved changes exist.
+3. **Save to cloud** -- New SaveMenu function with PUT /api/menu. Conflict detection via baseVersion (409 on stale version). Menu version persisted to `.menu-version` sidecar file across restarts.
+4. **Menu versioning** -- FetchMenu/SyncMenu now return version numbers. InitialMenuVersion plumbed from automate main.go through Config to State.MenuVersion.
+5. **Data-driven command palette** -- InjectCommandFolder skips injection if `:` palette already exists in loaded cache. Action field on all command items for stable routing that survives renames. HandleCommandAction routes by Action with fallback to Fields[0].
+6. **ItemAction refactor** -- All `Item.Action` string and `Item.URL` string references replaced with `*core.ItemAction{Type, Target}`. Command palette items use `cmdAction()` helper. Inspect properties decompose ItemAction into "url"/"action" display. Automate output collapses URL/Action check into single `item.Action.Target` print. Sync YAML marshaling preserves separate url/action keys for backwards compatibility.

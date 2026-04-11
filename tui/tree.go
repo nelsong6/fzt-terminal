@@ -40,7 +40,12 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 			sec := remaining % 60
 			title = fmt.Sprintf("next sync check: %dm %02ds", m, sec)
 		}
-		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, versionStr, titleStyle, s.SyncIcon, cfg.Label)
+		// Dirty indicator takes priority over sync icon
+		icon := s.SyncIcon
+		if s.Dirty {
+			icon = "\u25cf" // ●
+		}
+		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, versionStr, titleStyle, icon, cfg.Label)
 		y++
 		borderOffset = 1
 	}
@@ -73,10 +78,13 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	promptBg := PromptSurfaceBg
 	borderStyle := tcell.StyleDefault.Foreground(BorderFg)
 
-	// Mode indicator: search (magnifying glass) vs nav (arrow) -- always shown
+	// Mode indicator: search (magnifying glass) vs nav (arrow) vs inspect (gear)
 	var promptIcon rune
 	var promptIconStyle tcell.Style
-	if ctx.NavMode {
+	if s.InspectTargetIdx >= 0 {
+		promptIcon = '\u2699'  // ⚙ gear for inspect mode
+		promptIconStyle = tcell.StyleDefault.Foreground(HintFg).Background(promptBg)
+	} else if ctx.NavMode {
 		promptIcon = '\uF0A9'  //
 		promptIconStyle = tcell.StyleDefault.Foreground(NavModeFg).Background(promptBg)
 	} else {
@@ -137,7 +145,12 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	contentX := qx // where query or nav preview starts
 	contentW := pw - promptLen - scopeLen
 
-	if hasQuery {
+	if s.EditMode == "rename" {
+		// Rename mode — show edit buffer as editable text
+		renameStyle := tcell.StyleDefault.Foreground(QueryFg).Background(promptBg)
+		drawText(c, contentX, y, string(s.EditBuffer), renameStyle, contentW)
+		c.ShowCursor(contentX+len(s.EditBuffer), y)
+	} else if hasQuery {
 		queryStyle := tcell.StyleDefault.Foreground(QueryFg).Background(promptBg)
 		drawText(c, contentX, y, string(ctx.Query), queryStyle, contentW)
 		c.ShowCursor(contentX+ctx.Cursor, y)
@@ -272,7 +285,10 @@ func drawTreeRow(c render.Canvas, row core.TreeRow, isSelected, isTopMatch bool,
 	// Icon
 	var iconRune rune
 	var iconStyle tcell.Style
-	if row.Item.HasChildren {
+	if row.Item.IsProperty {
+		iconRune = '\u2699' // ⚙ gear icon for property items
+		iconStyle = tcell.StyleDefault.Foreground(HintFg)
+	} else if row.Item.HasChildren {
 		iconRune = '\U000F024B'
 		iconStyle = tcell.StyleDefault.Foreground(FolderIconFg).Bold(true)
 	} else {

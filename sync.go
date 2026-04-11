@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -130,69 +131,143 @@ func StripMetadata(items []interface{}) []interface{} {
 }
 
 // FetchMenu GETs the full menu tree from the API.
-func FetchMenu(token string) ([]interface{}, string, error) {
+// Returns (menu, version, updatedAt, error).
+func FetchMenu(token string) ([]interface{}, int, string, error) {
 	req, err := http.NewRequest("GET", APIBase+"/api/menu", nil)
 	if err != nil {
-		return nil, "", err
+		return nil, 0, "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, "", err
+		return nil, 0, "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, "", fmt.Errorf("API returned %d", resp.StatusCode)
+		return nil, 0, "", fmt.Errorf("API returned %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, "", err
+		return nil, 0, "", err
 	}
 
 	var result struct {
 		Menu      []interface{} `json:"menu"`
+		Version   int           `json:"version"`
 		UpdatedAt *string       `json:"updatedAt"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, "", err
+		return nil, 0, "", err
 	}
 
 	updatedAt := ""
 	if result.UpdatedAt != nil {
 		updatedAt = *result.UpdatedAt
 	}
-	return result.Menu, updatedAt, nil
+	return result.Menu, result.Version, updatedAt, nil
 }
 
 // SyncMenu fetches the full menu from the API and writes the cache file as YAML.
-// Returns the number of top-level items synced, or an error.
-func SyncMenu(configDir, secret string) (int, error) {
+// Returns (item count, version number, error).
+func SyncMenu(configDir, secret string) (int, int, error) {
+	_, claims, err := LoadIdentityClaims(configDir)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	token := MintJWT(secret, claims)
+	menu, version, _, err := FetchMenu(token)
+	if err != nil {
+		return 0, 0, fmt.Errorf("API error: %w", err)
+	}
+
+	data, err := MenuToYAML(menu)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	cacheFile := filepath.Join(configDir, "menu-cache.yaml")
+	if err := os.WriteFile(cacheFile, data, 0644); err != nil {
+		return 0, 0, fmt.Errorf("failed to write cache: %w", err)
+	}
+
+	// Persist version number for next launch
+	versionFile := filepath.Join(configDir, ".menu-version")
+	os.WriteFile(versionFile, []byte(fmt.Sprintf("%d", version)), 0644)
+
+	return len(menu), version, nil
+}
+
+// SaveMenu PUTs the menu tree to the API and updates the local cache.
+// Returns the new version number, or an error.
+func SaveMenu(configDir, secret string, menu []interface{}, baseVersion int) (int, error) {
 	_, claims, err := LoadIdentityClaims(configDir)
 	if err != nil {
 		return 0, err
 	}
 
 	token := MintJWT(secret, claims)
-	menu, _, err := FetchMenu(token)
-	if err != nil {
-		return 0, fmt.Errorf("API error: %w", err)
+
+	body := map[string]interface{}{
+		"menu":        menu,
+		"baseVersion": baseVersion,
 	}
 
-	data, err := MenuToYAML(menu)
+	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return 0, err
 	}
 
-	cacheFile := filepath.Join(configDir, "menu-cache.yaml")
-	if err := os.WriteFile(cacheFile, data, 0644); err != nil {
-		return 0, fmt.Errorf("failed to write cache: %w", err)
+	req, err := http.NewRequest("PUT", APIBase+"/api/menu", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
 	}
 
-	return len(menu), nil
+	if resp.StatusCode == 409 {
+		return 0, fmt.Errorf("conflict — sync first")
+	}
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("API returned %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return 0, err
+	}
+
+	// Write local cache from the same data
+	data, err := MenuToYAML(menu)
+	if err != nil {
+		return result.Version, nil // saved to API but cache write failed — non-fatal
+	}
+	cacheFile := filepath.Join(configDir, "menu-cache.yaml")
+	os.WriteFile(cacheFile, data, 0644)
+
+	// Persist version number for next launch
+	versionFile := filepath.Join(configDir, ".menu-version")
+	os.WriteFile(versionFile, []byte(fmt.Sprintf("%d", result.Version)), 0644)
+
+	return result.Version, nil
 }
 
 // MenuToYAML converts the API menu response (JSON objects) to YAML format
@@ -212,6 +287,8 @@ func marshalYAMLItems(items []interface{}, indent int) []byte {
 		name, _ := m["name"].(string)
 		desc, _ := m["description"].(string)
 		url, _ := m["url"].(string)
+		action, _ := m["action"].(string)
+		hidden, _ := m["hidden"].(bool)
 		children, hasChildren := m["children"].([]interface{})
 
 		buf = append(buf, []byte(prefix+"- name: \""+name+"\"\n")...)
@@ -220,6 +297,12 @@ func marshalYAMLItems(items []interface{}, indent int) []byte {
 		}
 		if url != "" {
 			buf = append(buf, []byte(prefix+"  url: \""+url+"\"\n")...)
+		}
+		if action != "" {
+			buf = append(buf, []byte(prefix+"  action: \""+action+"\"\n")...)
+		}
+		if hidden {
+			buf = append(buf, []byte(prefix+"  hidden: true\n")...)
 		}
 		if hasChildren && len(children) > 0 {
 			buf = append(buf, []byte(prefix+"  children:\n")...)

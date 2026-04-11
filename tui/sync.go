@@ -61,7 +61,7 @@ func checkBookmarkStaleness(configDir string, secret string) bool {
 	}
 
 	token := terminal.MintJWT(secret, claims)
-	_, updatedAt, err := terminal.FetchMenu(token)
+	_, _, updatedAt, err := terminal.FetchMenu(token)
 	if err != nil {
 		return false
 	}

@@ -16,6 +16,267 @@ import (
 	terminal "github.com/nelsong6/fzt-terminal"
 )
 
+// handleShortcut checks for Shift+letter shortcuts.
+// Returns (action, true) if a shortcut was detected (even if unknown),
+// or ("", false) to fall through to normal input handling.
+// HJKL are reserved for vim nav and handled by the engine.
+func handleShortcut(s *core.State, ev *tcell.EventKey) (string, bool) {
+	// Shift+Enter — confirmation key for action modes
+	if ev.Key() == tcell.KeyEnter && ev.Modifiers()&tcell.ModShift != 0 {
+		return handleShiftEnter(s), true
+	}
+
+	// Shift+Backspace — reset navigation to root, preserve edit mode
+	if (ev.Key() == tcell.KeyBackspace || ev.Key() == tcell.KeyBackspace2) && ev.Modifiers()&tcell.ModShift != 0 {
+		// Clean up any active inspection
+		if s.InspectTargetIdx >= 0 {
+			cleanupInspect(s)
+		}
+		// Pop all contexts back to primary
+		for len(s.Contexts) > 1 {
+			s.PopContext()
+		}
+		ctx := s.TopCtx()
+		ctx.Scope = []core.ScopeLevel{{ParentIdx: -1}}
+		ctx.Query = nil
+		ctx.Cursor = 0
+		ctx.TreeCursor = -1
+		ctx.TreeOffset = 0
+		ctx.SearchActive = false
+		ctx.NavMode = false
+		ctx.Filtered = nil
+		ctx.QueryExpanded = make(map[int]bool)
+		ctx.TreeExpanded = make(map[int]bool)
+		// Only show home indicator if no edit mode is active
+		if s.EditMode == "" {
+			s.SetTitle("\u2302", 1)
+		}
+		return "", true
+	}
+
+	// Escape cancels active edit mode or closes inspect
+	if ev.Key() == tcell.KeyEscape {
+		if s.InspectTargetIdx >= 0 {
+			cleanupInspect(s)
+			s.ClearTitle()
+			return "", true
+		}
+		if s.EditMode != "" && s.EditMode != "rename" {
+			s.EditMode = ""
+			s.ClearTitle()
+			return "", true
+		}
+	}
+
+	if ev.Key() != tcell.KeyRune {
+		return "", false
+	}
+
+	ch := ev.Rune()
+
+	switch ch {
+	case 'H', 'J', 'K', 'L':
+		if s.EditMode == "" {
+			arrows := map[rune]string{'H': "\u2190", 'J': "\u2193", 'K': "\u2191", 'L': "\u2192"}
+			s.SetTitle(arrows[ch], 1)
+		}
+		return "", false // vim nav, fall through to engine
+	case 'S':
+		item := core.Item{Fields: []string{"sync"}}
+		return terminal.HandleCommandAction(s, item), true
+	case 'W':
+		item := core.Item{Fields: []string{"save"}}
+		return terminal.HandleCommandAction(s, item), true
+	case 'A':
+		item := core.Item{Fields: []string{"add-after"}}
+		return terminal.HandleCommandAction(s, item), true
+	case 'F':
+		item := core.Item{Fields: []string{"add-folder"}}
+		return terminal.HandleCommandAction(s, item), true
+	case 'R':
+		item := core.Item{Fields: []string{"rename"}}
+		return terminal.HandleCommandAction(s, item), true
+	case 'D':
+		item := core.Item{Fields: []string{"delete"}}
+		return terminal.HandleCommandAction(s, item), true
+	case 'I':
+		item := core.Item{Fields: []string{"inspect"}}
+		return terminal.HandleCommandAction(s, item), true
+	}
+
+	// Any other capital letter — unknown shortcut
+	if ch >= 'A' && ch <= 'Z' {
+		s.SetTitle("?", 2)
+		return "", true
+	}
+
+	return "", false
+}
+
+// handleShiftEnter dispatches confirmation based on the active edit mode.
+func handleShiftEnter(s *core.State) string {
+	ctx := s.TopCtx()
+	visible := core.TreeVisibleItems(s)
+
+	if ctx.TreeCursor < 0 || ctx.TreeCursor >= len(visible) {
+		return ""
+	}
+	row := visible[ctx.TreeCursor]
+
+	// If cursor is on a property item, edit that property's value
+	if row.Item.IsProperty && row.Item.PropertyOf >= 0 {
+		s.EditMode = "rename"
+		s.EditTargetIdx = row.ItemIdx
+		currentVal := ""
+		if len(row.Item.Fields) > 1 {
+			currentVal = row.Item.Fields[1]
+		}
+		s.EditOrigName = currentVal
+		s.EditBuffer = []rune(currentVal)
+		s.SetTitle("edit "+row.Item.PropertyKey+", Enter to confirm", 0)
+		return ""
+	}
+
+	switch s.EditMode {
+	case "add-after":
+		newItem := core.Item{Fields: []string{"new-item"}}
+		newIdx := core.AddItemAfter(ctx, row.ItemIdx, newItem)
+		if newIdx >= 0 {
+			// Enter rename mode for the new item
+			s.EditMode = "rename"
+			s.EditTargetIdx = newIdx
+			s.EditOrigName = "new-item"
+			s.EditBuffer = []rune("new-item")
+			s.SetTitle("type name, Enter to confirm", 0)
+		}
+		return ""
+
+	case "add-folder":
+		// Create folder after cursor
+		folder := core.Item{Fields: []string{"new-folder"}, HasChildren: true}
+		folderIdx := core.AddItemAfter(ctx, row.ItemIdx, folder)
+		if folderIdx >= 0 {
+			// Create first child inside the folder
+			child := core.Item{Fields: []string{"new-item"}}
+			core.AddChildTo(ctx, folderIdx, child)
+			// Enter rename mode for the folder
+			s.EditMode = "rename"
+			s.EditTargetIdx = folderIdx
+			s.EditOrigName = "new-folder"
+			s.EditBuffer = []rune("new-folder")
+			s.SetTitle("type folder name, Enter to confirm", 0)
+		}
+		return ""
+
+	case "delete":
+		if !core.CanDelete(s, row.ItemIdx) {
+			s.SetTitle("cannot delete: item is in active scope", 2)
+			return ""
+		}
+		name := ""
+		if len(row.Item.Fields) > 0 {
+			name = row.Item.Fields[0]
+		}
+		core.DeleteItem(ctx, row.ItemIdx)
+		s.Dirty = true
+		s.EditMode = ""
+		s.SetTitle("deleted: "+name, 1)
+		return ""
+
+	case "inspect":
+		// Clean up any previous inspection
+		cleanupInspect(s)
+		// Create temporary property items for this item
+		s.InspectTargetIdx = row.ItemIdx
+		item := ctx.AllItems[row.ItemIdx]
+		name := ""
+		if len(item.Fields) > 0 {
+			name = item.Fields[0]
+		}
+		desc := ""
+		if len(item.Fields) > 1 {
+			desc = item.Fields[1]
+		}
+
+		// Build properties — only show fields that have values
+		var props []struct{ key, val string }
+		props = append(props, struct{ key, val string }{"name", name})
+		if desc != "" {
+			props = append(props, struct{ key, val string }{"description", desc})
+		}
+		if item.Action != nil {
+			if item.Action.Type == "url" {
+				props = append(props, struct{ key, val string }{"url", item.Action.Target})
+			} else if item.Action.Target != "" {
+				props = append(props, struct{ key, val string }{"action", item.Action.Target})
+			}
+		}
+
+		s.InspectItemIdxs = nil
+		for _, p := range props {
+			propItem := core.Item{
+				Fields:     []string{p.key, p.val},
+				Depth:      item.Depth + 1,
+				ParentIdx:  row.ItemIdx,
+				IsProperty: true,
+				PropertyOf: row.ItemIdx,
+				PropertyKey: p.key,
+			}
+			propIdx := len(ctx.AllItems)
+			ctx.AllItems = append(ctx.AllItems, propItem)
+			s.InspectItemIdxs = append(s.InspectItemIdxs, propIdx)
+		}
+
+		// Insert property items at the beginning of the target's Children
+		ctx.AllItems[row.ItemIdx].Children = append(s.InspectItemIdxs, ctx.AllItems[row.ItemIdx].Children...)
+		ctx.AllItems[row.ItemIdx].HasChildren = true
+		ctx.TreeExpanded[row.ItemIdx] = true
+
+		s.EditMode = ""
+		s.SetTitle("inspecting: "+name, 0)
+		return ""
+	}
+
+	return ""
+}
+
+// cleanupInspect removes any existing property items from the tree.
+func cleanupInspect(s *core.State) {
+	if s.InspectTargetIdx < 0 || len(s.InspectItemIdxs) == 0 {
+		return
+	}
+	ctx := s.TopCtx()
+
+	// Remove property indices from parent's Children
+	if s.InspectTargetIdx < len(ctx.AllItems) {
+		parent := &ctx.AllItems[s.InspectTargetIdx]
+		propSet := make(map[int]bool)
+		for _, idx := range s.InspectItemIdxs {
+			propSet[idx] = true
+		}
+		var filtered []int
+		for _, childIdx := range parent.Children {
+			if !propSet[childIdx] {
+				filtered = append(filtered, childIdx)
+			}
+		}
+		parent.Children = filtered
+		if len(parent.Children) == 0 {
+			parent.HasChildren = false
+		}
+	}
+
+	// Mark property items as hidden
+	for _, idx := range s.InspectItemIdxs {
+		if idx < len(ctx.AllItems) {
+			ctx.AllItems[idx].Hidden = true
+		}
+	}
+
+	s.InspectTargetIdx = -1
+	s.InspectItemIdxs = nil
+}
+
 // processAction intercepts "select:..." actions to handle command palette routing.
 // When the selection occurred inside a `:` scope (IsInCommandScope), it looks up
 // the actual tree item (not the AcceptNth-truncated string) and routes through
@@ -182,6 +443,9 @@ func applyFrontendConfig(s *core.State, cfg Config) {
 	if cfg.ConfigDir != "" {
 		s.ConfigDir = cfg.ConfigDir
 	}
+	if cfg.InitialMenuVersion > 0 {
+		s.MenuVersion = cfg.InitialMenuVersion
+	}
 }
 
 // runWithSession renders directly to a tcell screen, supporting tree mode + search switching.
@@ -224,7 +488,27 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
+			// Shortcuts: Shift+letter (capitals) or Alt+letter bypass search input
+			if action, handled := handleShortcut(s, ev); handled {
+				switch {
+				case action == "":
+				case action == "cancel" || action == "abort":
+					return "", nil
+				case action == "unloaded":
+					return "unloaded", nil
+				case action == "loaded" || action == "synced":
+					return action, nil
+				default:
+					return action, nil
+				}
+				break
+			}
+			wasRenaming := s.EditMode == "rename"
 			raw := core.HandleUnifiedKey(s, ev.Key(), ev.Rune(), cfg, searchCols)
+			// Auto-close inspect view only after a property edit is confirmed
+			if wasRenaming && s.EditMode == "" && s.InspectTargetIdx >= 0 {
+				cleanupInspect(s)
+			}
 			action := processAction(s, raw)
 			switch {
 			case action == "":
@@ -233,8 +517,8 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 				return "", nil
 			case action == "unloaded":
 				return "unloaded", nil
-			case action == "loaded":
-				return "loaded", nil
+			case action == "loaded" || action == "synced":
+				return action, nil
 			case action == "update":
 				screen.Fini()
 				RunUpdate()

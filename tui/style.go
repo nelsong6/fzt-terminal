@@ -34,6 +34,7 @@ var (
 )
 
 // ColorToRGB converts a tcell color to its Catppuccin Mocha RGB values.
+// Handles named colors (via PaletteRGB), 256-color palette, and true color.
 // Returns the default foreground for unknown colors.
 func ColorToRGB(c tcell.Color) (r, g, b uint8) {
 	if c == tcell.ColorDefault {
@@ -42,9 +43,12 @@ func ColorToRGB(c tcell.Color) (r, g, b uint8) {
 	if rgb, ok := PaletteRGB[c]; ok {
 		return rgb[0], rgb[1], rgb[2]
 	}
-	// True color — extract directly
+	// 256-color palette or true color — tcell.RGB() handles both
 	cr, cg, cb := c.RGB()
-	return uint8(cr >> 8), uint8(cg >> 8), uint8(cb >> 8)
+	if cr < 0 {
+		return TextFgRGB[0], TextFgRGB[1], TextFgRGB[2]
+	}
+	return uint8(cr), uint8(cg), uint8(cb)
 }
 
 // Font configuration — shared defaults for GDI and terminal renderers.

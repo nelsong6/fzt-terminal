@@ -422,6 +422,12 @@ export function createFztTerminal(container, options = {}) {
       return fzt.getUIState();
     },
 
+    setLabel(label) {
+      if (!ready) return;
+      const result = fzt.setLabel(label);
+      if (result && !(result instanceof Error)) render(result);
+    },
+
     initSession() {
       if (!ready) return;
       const { cols, rows } = computeGridSize();

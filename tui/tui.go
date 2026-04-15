@@ -340,8 +340,12 @@ func NewSession(items []core.Item, cfg Config, w, h int) *render.Session {
 }
 
 // NewTreeSession creates a headless TUI session (tree mode) via the render package.
+// Applies frontend config and injects the command palette, matching the full TUI path.
 func NewTreeSession(items []core.Item, cfg Config, w, h int) *render.Session {
-	return render.NewTreeSession(items, cfg, w, h, drawUnifiedTreeFunc, renderFrameDrawFunc)
+	sess := render.NewTreeSession(items, cfg, w, h, drawUnifiedTreeFunc, renderFrameDrawFunc)
+	applyFrontendConfig(sess.State(), cfg)
+	terminal.InjectCommandFolder(sess.State(), terminal.EngineVersion)
+	return sess
 }
 
 // drawUnifiedTreeFunc wraps drawUnified as a render.DrawTreeFunc.

@@ -261,7 +261,7 @@ func drawTreeRow(c render.Canvas, row core.TreeRow, isSelected, isTopMatch bool,
 	// Selection indicator
 	if isSelected {
 		indStyle := tcell.StyleDefault.Foreground(FolderIconFg).Bold(true).Background(SelectionBg)
-		drawText(c, x, y, "\u25b8 ", indStyle, 2)
+		drawText(c, x, y, "\uf054 ", indStyle, 2)
 	} else {
 		style := tcell.StyleDefault
 		if hasBg {

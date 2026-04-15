@@ -428,7 +428,7 @@ export function createFztTerminal(container, options = {}) {
       if (result && !(result instanceof Error)) render(result);
     },
 
-    initSession() {
+    init() {
       if (!ready) return;
       const { cols, rows } = computeGridSize();
       lastGridSize = cols + "x" + rows;
@@ -444,7 +444,7 @@ export function createFztTerminal(container, options = {}) {
       return true;
     },
 
-    sendKey(key, ctrlKey, shiftKey) {
+    handleKey(key, ctrlKey, shiftKey) {
       sendKey(key, ctrlKey, shiftKey);
     },
 

@@ -1,28 +1,27 @@
 # fzt-terminal
 
-Renderers repo for fzt interactive tools. Provides the terminal renderer (tcell + raw TTY) and the browser renderer (JS + CSS + WASM bridge). Imports the fzt engine (`github.com/nelsong6/fzt`) for state and scoring, and `github.com/nelsong6/fzt-frontend` for the command palette and shared interaction behavior.
+Terminal renderer for fzt. Provides the tcell-based TUI (full-screen + inline) that's consumed as a Go library by `fzt-automate`, `fzt-picker`, and `fzt-browser`'s headless session. Imports the fzt engine (`github.com/nelsong6/fzt`) for state and scoring, and `github.com/nelsong6/fzt-frontend` for the command palette and shared interaction behavior.
 
-The fzt-automate shell tool used to live here at `cmd/automate/` and is now its own repo (`github.com/nelsong6/fzt-automate`). fzt-terminal no longer builds or releases the `fzt-automate-*` binaries — fzt-automate does.
+The other half of the old fzt-terminal — the browser renderer and the WASM bridge — now lives at `github.com/nelsong6/fzt-browser`. The shell-automation CLI lives at `github.com/nelsong6/fzt-automate`. The command palette + credential + API sync live at `github.com/nelsong6/fzt-frontend`. See the 2026-04-16 split history at the bottom.
 
 ## Architecture
 
 ```
 fzt (engine)                    fzt-terminal (this repo)
-  core.State, core.HandleKey      tui/            -- terminal renderer (tcell + raw TTY)
-  core.TreeContext, scoring        web/            -- browser renderer (JS + CSS)
-  render.Canvas, render.Session   cmd/wasm/       -- WASM bridge (Go -> JS)
-  core.LoadYAML                   build/          -- build script with version injection
+  core.State, core.HandleKey      tui/                -- terminal renderer (tcell + raw TTY)
+  core.TreeContext, scoring        packages/routes/    -- @nelsong6/fzt-terminal-routes (AT menu API)
+  render.Canvas, render.Session
+
 fzt-frontend (interaction layer)
   frontend.InjectCommandFolder    consumed by tui/ for palette injection
   frontend.HandleCommandAction    consumed by tui/ for action routing
   frontend.CheckBookmarkStaleness  consumed by tui/sync.go for background staleness check
-  frontend.ReadJWTSecret / etc.   palette-command implementations (sync, validate, save, ...)
-```
 
-The command palette, credential store, and API-backed menu sync used to live
-at the root of this repo (package `terminal`). As of the fzt-frontend split,
-they moved to `nelsong6/fzt-frontend`. This repo now only renders — it does
-not own interaction behavior.
+Consumers of this repo's tui package:
+  fzt-automate   (CLI)        -> tui.Run for the shell menu
+  fzt-picker     (Windows)    -> tui.NewSession headless, rendered via CGo/GDI
+  fzt-browser    (WASM)       -> tui.NewSession headless, rendered via ANSI in browser
+```
 
 ## Package guide
 
@@ -59,36 +58,13 @@ Full-screen and inline TUI rendering via tcell. Key files:
 | `rawreader_windows.go` | Windows: opens `CONIN$/CONOUT$`, enables VT processing + VT input. |
 | `commands.go` | Currently empty (placeholder). |
 
-### `web/` -- Browser renderer
+### Browser rendering — moved
 
-JavaScript/CSS for rendering fzt in the browser via WASM:
+The `web/` folder (JS/CSS shim) and `cmd/wasm/` (WASM bridge) both moved to `github.com/nelsong6/fzt-browser` on 2026-04-16. That repo publishes `fzt.wasm` + the four JS/CSS files as release assets; `my-homepage` and `fzt-showcase` download from there. See the fzt-browser CLAUDE.md for the WASM API reference.
 
-| File | Purpose |
-|------|---------|
-| `fzt-terminal.js` | Core browser terminal. ANSI parser, grid renderer (styled HTML spans), font metrics, keyboard forwarding, resize observer. Factory: `createFztTerminal(container, options)`. |
-| `fzt-web.js` | Higher-level wrapper with Catppuccin Mocha defaults (palette, Perfect DOS VGA 437 font, Nerd Font icons). Factory: `createFztWeb(container, options)`. |
-| `fzt-dom-renderer.js` | Alternative DOM renderer using structured data API (`getVisibleRows`, `getPromptState`, `getUIState`) instead of ANSI parsing. Renders native DOM elements with CSS classes. |
-| `fzt-terminal.css` | CRT terminal styles: scanline overlay, vignette, cursor blink, custom properties (`--fzt-*`). |
+### Build script — removed
 
-### `cmd/wasm/` -- WASM bridge
-
-Compiles to `fzt.wasm`. Sets `EnvTags: ["wasm", "browser"]` so browser-inappropriate commands (e.g. `update`) are filtered out of the palette. Exposes a global `fzt` object to JavaScript:
-
-- `fzt.loadYAML(yaml)` -- parse YAML items
-- `fzt.setFrontend({name, version})` -- register frontend identity
-- `fzt.addCommands([{name, description, action}])` -- register frontend commands for `:` palette
-- `fzt.setLabel(text)` -- set the top-left border label (e.g. user name after auth)
-- `fzt.init(cols, rows)` -- create session, returns `{ansi, cursorX, cursorY}`
-- `fzt.handleKey(key, ctrl, shift)` -- process keyboard event, returns frame + action
-- `fzt.clickRow(row)` -- process mouse click on visual row
-- `fzt.resize(cols, rows)` -- resize terminal
-- `fzt.getVisibleRows()` / `fzt.getPromptState()` / `fzt.getUIState()` -- structured data API for DOM renderer
-
-### `build/` -- Build script
-
-`go run ./build wasm` builds the WASM binary with version injection via ldflags (`-X render.Version=<git describe>` and `-X github.com/nelsong6/fzt-frontend.EngineVersion=<fzt engine version from go.mod or git describe for local replace>`).
-
-Note: this repo no longer builds the fzt-automate native binary — that moved to `nelsong6/fzt-automate`. The `build/main.go` script still has an `automate` case for historical reasons but it no longer has anything to build.
+`build/` was deleted post-split since this repo produces no binaries. Build helpers for consumers live in their own repos (e.g. `fzt-automate`'s `.github/workflows/build.yml`).
 
 ## Style system
 
@@ -162,24 +138,16 @@ All key/click handlers return an action string:
 
 ## Building
 
-```bash
-# WASM binary
-go run ./build wasm
-# or directly:
-GOOS=js GOARCH=wasm go build -o fzt.wasm ./cmd/wasm
-```
-
-The build script injects `render.Version` from `git describe --tags --always --dirty` and `frontend.EngineVersion` from the fzt engine version in go.mod (or git describe for local replace) via ldflags.
-
-(The native fzt-automate binary is now built from `github.com/nelsong6/fzt-automate`, not here.)
+Nothing to build here — this repo is a Go library plus a Node.js route package. Consumers (`fzt-automate`, `fzt-picker`, `fzt-browser`) import `github.com/nelsong6/fzt-terminal/tui` and handle their own builds.
 
 ## CI
 
-GitHub Actions workflow (`.github/workflows/build.yml`) on push to main:
+GitHub Actions workflow (`.github/workflows/build.yml`) on push to main is a tag-and-dispatch job:
 
-1. **Build**: WASM (`fzt.wasm`) only. Automate binaries moved to the fzt-automate repo.
-2. **Release**: auto-increments patch version, creates GitHub release with the WASM binary + web assets (`fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js`, `fzt-dom-renderer.js`).
-3. **Downstream dispatch**: notifies `fzt-showcase`, `my-homepage`, and `fzt-picker` repos via `repository_dispatch` (uses GitHub App token from Azure Key Vault for cross-repo auth).
+1. **Tag**: auto-increment patch version and create a GitHub release (no asset uploads — this is just so Go consumers can `go get` at a specific version).
+2. **Dispatch**: notify the three Go-module consumers (`fzt-picker`, `fzt-automate`, `fzt-browser`) via `repository_dispatch` so their own dispatch workflows can bump `fzt-terminal` in their go.mod. Uses GitHub App token from Azure Key Vault.
+
+The `packages/routes/` Node.js package has its own `publish-routes.yml` workflow (unchanged).
 
 ## Key patterns
 

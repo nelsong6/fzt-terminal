@@ -1,4 +1,4 @@
-name: Build
+name: Tag + Dispatch
 
 on:
   push:
@@ -9,71 +9,17 @@ permissions:
   contents: write
   id-token: write
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          # WASM bridge
-          - name: wasm
-            goos: js
-            goarch: wasm
-            ext: .wasm
-            package: ./cmd/wasm
-            output: fzt.wasm
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Compute version
-        id: version
-        run: |
-          latest=$(gh release list -R ${{ github.repository }} --limit 1 --json tagName -q '.[0].tagName // empty' 2>/dev/null || echo "")
-          if [ -z "$latest" ]; then
-            echo "version=v0.1.0" >> $GITHUB_OUTPUT
-          else
-            patch=$(echo "$latest" | sed 's/v[0-9]*\.[0-9]*\.//')
-            echo "version=v0.1.$((patch + 1))" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Get engine version from go.mod
-        id: engine
-        run: echo "version=$(grep 'github.com/nelsong6/fzt ' go.mod | awk '{print $2}')" >> $GITHUB_OUTPUT
-      - run: >
-          go build
-          -ldflags="-X github.com/nelsong6/fzt/render.Version=${{ steps.version.outputs.version }}
-          -X github.com/nelsong6/fzt-frontend.EngineVersion=${{ steps.engine.outputs.version }}"
-          -o ${{ matrix.output }} ${{ matrix.package }}
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.name }}
-          path: ${{ matrix.output }}
+# fzt-terminal post-split is a Go library — no binary artifacts. The job is
+# only here to cut a new tag on push (so Go consumers can reference specific
+# versions) and notify the consumers that there's something to pick up.
 
+jobs:
   release:
-    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - name: Prepare release assets
-        run: |
-          mkdir release
-          cp artifacts/wasm/fzt.wasm release/
-          cp web/fzt-terminal.js release/
-          cp web/fzt-terminal.css release/
-          cp web/fzt-web.js release/
-          cp web/fzt-dom-renderer.js release/
       - name: Create versioned release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -85,7 +31,7 @@ jobs:
             patch=$(echo "$latest" | sed 's/v[0-9]*\.[0-9]*\.//')
             next="v0.1.$((patch + 1))"
           fi
-          gh release create "$next" release/* \
+          gh release create "$next" \
             -R ${{ github.repository }} \
             --title "$next" \
             --notes "$(git log --oneline -1)"
@@ -116,13 +62,13 @@ jobs:
         with:
           app-id: ${{ steps.app-creds.outputs.app_id }}
           private-key: ${{ steps.app-creds.outputs.private_key }}
-          repositories: fzt-showcase,my-homepage,fzt-picker
+          repositories: fzt-picker,fzt-automate,fzt-browser
 
-      - name: Notify downstream repos
+      - name: Notify Go-module consumers
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          for repo in nelsong6/fzt-showcase nelsong6/my-homepage nelsong6/fzt-picker; do
+          for repo in nelsong6/fzt-picker nelsong6/fzt-automate nelsong6/fzt-browser; do
             gh api repos/$repo/dispatches \
               -f event_type=fzt-updated
           done

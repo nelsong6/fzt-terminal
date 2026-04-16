@@ -137,13 +137,13 @@ jobs:
         with:
           app-id: ${{ steps.app-creds.outputs.app_id }}
           private-key: ${{ steps.app-creds.outputs.private_key }}
-          repositories: fzt-showcase,my-homepage
+          repositories: fzt-showcase,my-homepage,fzt-picker
 
       - name: Notify downstream repos
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          for repo in nelsong6/fzt-showcase nelsong6/my-homepage; do
+          for repo in nelsong6/fzt-showcase nelsong6/my-homepage nelsong6/fzt-picker; do
             gh api repos/$repo/dispatches \
               -f event_type=fzt-updated
           done

@@ -1,6 +1,8 @@
 # fzt-terminal
 
-Renderers repo for fzt interactive tools. Provides the terminal renderer (tcell + raw TTY) and the browser renderer (JS + CSS + WASM bridge), plus the automate shell tool. Imports the fzt engine (`github.com/nelsong6/fzt`) for state and scoring, and `github.com/nelsong6/fzt-frontend` for the command palette and shared interaction behavior.
+Renderers repo for fzt interactive tools. Provides the terminal renderer (tcell + raw TTY) and the browser renderer (JS + CSS + WASM bridge). Imports the fzt engine (`github.com/nelsong6/fzt`) for state and scoring, and `github.com/nelsong6/fzt-frontend` for the command palette and shared interaction behavior.
+
+The fzt-automate shell tool used to live here at `cmd/automate/` and is now its own repo (`github.com/nelsong6/fzt-automate`). fzt-terminal no longer builds or releases the `fzt-automate-*` binaries — fzt-automate does.
 
 ## Architecture
 
@@ -9,8 +11,7 @@ fzt (engine)                    fzt-terminal (this repo)
   core.State, core.HandleKey      tui/            -- terminal renderer (tcell + raw TTY)
   core.TreeContext, scoring        web/            -- browser renderer (JS + CSS)
   render.Canvas, render.Session   cmd/wasm/       -- WASM bridge (Go -> JS)
-  core.LoadYAML                   cmd/automate/   -- shell automation binary
-                                  build/          -- build script with version injection
+  core.LoadYAML                   build/          -- build script with version injection
 fzt-frontend (interaction layer)
   frontend.InjectCommandFolder    consumed by tui/ for palette injection
   frontend.HandleCommandAction    consumed by tui/ for action routing
@@ -83,15 +84,11 @@ Compiles to `fzt.wasm`. Sets `EnvTags: ["wasm", "browser"]` so browser-inappropr
 - `fzt.resize(cols, rows)` -- resize terminal
 - `fzt.getVisibleRows()` / `fzt.getPromptState()` / `fzt.getUIState()` -- structured data API for DOM renderer
 
-### `cmd/automate/` -- Shell automation binary
-
-Standalone CLI tool: loads a YAML menu, presents an interactive tree picker via `tui.Run`, prints selected leaf to stdout. Shell wrappers execute the selection as a function. Sets `EnvTags: ["terminal"]` so terminal-only commands (e.g. `update`) appear in the palette.
-
-Usage: `fzt-automate --yaml <path> [--title "..."] [--header "Name\tDescription"]`
-
 ### `build/` -- Build script
 
-`go run ./build` builds the native automate binary with version injection via ldflags (`-X render.Version=<git describe>` and `-X terminal.EngineVersion=<fzt engine version from go.mod or git describe for local replace>`). `go run ./build wasm` builds the WASM binary.
+`go run ./build wasm` builds the WASM binary with version injection via ldflags (`-X render.Version=<git describe>` and `-X github.com/nelsong6/fzt-frontend.EngineVersion=<fzt engine version from go.mod or git describe for local replace>`).
+
+Note: this repo no longer builds the fzt-automate native binary — that moved to `nelsong6/fzt-automate`. The `build/main.go` script still has an `automate` case for historical reasons but it no longer has anything to build.
 
 ## Style system
 
@@ -166,11 +163,6 @@ All key/click handlers return an action string:
 ## Building
 
 ```bash
-# Automate binary (native)
-go run ./build
-# or directly:
-go build -o fzt-automate ./cmd/automate
-
 # WASM binary
 go run ./build wasm
 # or directly:
@@ -179,13 +171,15 @@ GOOS=js GOARCH=wasm go build -o fzt.wasm ./cmd/wasm
 
 The build script injects `render.Version` from `git describe --tags --always --dirty` and `frontend.EngineVersion` from the fzt engine version in go.mod (or git describe for local replace) via ldflags.
 
+(The native fzt-automate binary is now built from `github.com/nelsong6/fzt-automate`, not here.)
+
 ## CI
 
 GitHub Actions workflow (`.github/workflows/build.yml`) on push to main:
 
-1. **Build matrix**: WASM (`fzt.wasm`), automate binaries (windows-amd64, linux-amd64, darwin-arm64)
-2. **Release**: auto-increments patch version, creates GitHub release with all binaries + web assets (`fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js`, `fzt-dom-renderer.js`)
-3. **Downstream dispatch**: notifies `fzt-showcase` and `my-homepage` repos via `repository_dispatch` (uses GitHub App token from Azure Key Vault for cross-repo auth)
+1. **Build**: WASM (`fzt.wasm`) only. Automate binaries moved to the fzt-automate repo.
+2. **Release**: auto-increments patch version, creates GitHub release with the WASM binary + web assets (`fzt-terminal.js`, `fzt-terminal.css`, `fzt-web.js`, `fzt-dom-renderer.js`).
+3. **Downstream dispatch**: notifies `fzt-showcase`, `my-homepage`, and `fzt-picker` repos via `repository_dispatch` (uses GitHub App token from Azure Key Vault for cross-repo auth).
 
 ## Key patterns
 

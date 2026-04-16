@@ -22,25 +22,6 @@ jobs:
             ext: .wasm
             package: ./cmd/wasm
             output: fzt.wasm
-          # Automate binaries
-          - name: automate-windows
-            goos: windows
-            goarch: amd64
-            ext: .exe
-            package: ./cmd/automate
-            output: fzt-automate-windows-amd64.exe
-          - name: automate-linux
-            goos: linux
-            goarch: amd64
-            ext: ""
-            package: ./cmd/automate
-            output: fzt-automate-linux-amd64
-          - name: automate-darwin
-            goos: darwin
-            goarch: arm64
-            ext: ""
-            package: ./cmd/automate
-            output: fzt-automate-darwin-arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -89,9 +70,6 @@ jobs:
         run: |
           mkdir release
           cp artifacts/wasm/fzt.wasm release/
-          cp artifacts/automate-windows/fzt-automate-windows-amd64.exe release/
-          cp artifacts/automate-linux/fzt-automate-linux-amd64 release/
-          cp artifacts/automate-darwin/fzt-automate-darwin-arm64 release/
           cp web/fzt-terminal.js release/
           cp web/fzt-terminal.css release/
           cp web/fzt-web.js release/

@@ -19,6 +19,8 @@ jobs:
           go-version-file: go.mod
 
       - name: Update fzt engine
+        env:
+          GOPROXY: direct
         run: |
           go get github.com/nelsong6/fzt@latest
           go mod tidy

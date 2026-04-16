@@ -102,6 +102,7 @@ func main() {
 		AcceptNth:       []int{1},
 		Title:           title,
 		TreeMode:        true,
+		EnvTags:         []string{"terminal"},
 		FrontendName:    "automate",
 		FrontendVersion: render.Version,
 		InitialDisplay:  identity,

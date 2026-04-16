@@ -129,6 +129,7 @@ func initSession(this js.Value, args []js.Value) interface{} {
 		Tiered:       true,
 		DepthPenalty: 5,
 		HeaderLines:  1,
+		EnvTags:      []string{"wasm", "browser"},
 	}
 
 	// Apply frontend identity before session creation so InjectCommandFolder picks it up

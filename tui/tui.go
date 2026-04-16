@@ -450,6 +450,9 @@ func applyFrontendConfig(s *core.State, cfg Config) {
 	if cfg.InitialMenuVersion > 0 {
 		s.MenuVersion = cfg.InitialMenuVersion
 	}
+	if len(cfg.EnvTags) > 0 {
+		s.EnvTags = cfg.EnvTags
+	}
 }
 
 // runWithSession renders directly to a tcell screen, supporting tree mode + search switching.

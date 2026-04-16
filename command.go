@@ -54,6 +54,15 @@ func buildVersionRegistry(s *core.State, coreVersion string) {
 	}
 }
 
+func hasEnvTag(tags []string, tag string) bool {
+	for _, t := range tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
 func InjectCommandFolder(s *core.State, coreVersion string) {
 	ctx := s.TopCtx()
 
@@ -97,9 +106,9 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 	var items []core.Item
 
 	if hasFrontend {
-		items = buildTwoLevelCommandTree(s, ctlFolderIdx, 0, 1) // feIdx=0, coreIdx=1
+		items = buildTwoLevelCommandTree(s, ctlFolderIdx, 0, 1, s.EnvTags) // feIdx=0, coreIdx=1
 	} else {
-		items = buildCoreLevelCommandTree(s.VersionRegistry, ctlFolderIdx, 0) // coreIdx=0
+		items = buildCoreLevelCommandTree(s.VersionRegistry, ctlFolderIdx, 0, s.EnvTags) // coreIdx=0
 	}
 
 	ctx.AllItems = append(ctx.AllItems, items...)
@@ -108,37 +117,54 @@ func InjectCommandFolder(s *core.State, coreVersion string) {
 
 // buildCoreLevelCommandTree builds `:` → core commands directly (no frontend layer).
 // versionIdx is the index into State.VersionRegistry for this level's version string.
-func buildCoreLevelCommandTree(registry []string, ctlFolderIdx int, versionIdx int) []core.Item {
+func buildCoreLevelCommandTree(registry []string, ctlFolderIdx int, versionIdx int, envTags []string) []core.Item {
 	idx := ctlFolderIdx + 1
-
-	versionItemIdx := idx
-	idx++
-	updateIdx := idx
-	idx++
-	updatetimerIdx := idx
-	idx++
-	validateIdx := idx
-
-	ctlChildren := []int{versionItemIdx, updateIdx, updatetimerIdx, validateIdx}
+	var ctlChildren []int
+	var items []core.Item
 
 	versionDesc := ""
 	if versionIdx >= 0 && versionIdx < len(registry) {
 		versionDesc = registry[versionIdx]
 	}
 
-	return []core.Item{
-		{
-			Fields: []string{":"}, Depth: 0, HasChildren: true,
-			ParentIdx: -1, Children: ctlChildren, Hidden: true, PropertyOf: -1,
-		},
-		{
-			Fields: []string{"version", versionDesc}, Depth: 1,
-			ParentIdx: ctlFolderIdx, Action: cmdAction("version"), PropertyOf: -1,
-		},
-		{Fields: []string{"update", "Update fzt to latest release"}, Depth: 1, ParentIdx: ctlFolderIdx, Action: cmdAction("update"), PropertyOf: -1},
-		{Fields: []string{"updatetimer", "Show time to next sync check"}, Depth: 1, ParentIdx: ctlFolderIdx, Action: cmdAction("updatetimer"), PropertyOf: -1},
-		{Fields: []string{"validate", "Validate credential store"}, Depth: 1, ParentIdx: ctlFolderIdx, Action: cmdAction("validate"), PropertyOf: -1},
+	// version — always shown
+	versionItemIdx := idx
+	ctlChildren = append(ctlChildren, versionItemIdx)
+	idx++
+	items = append(items, core.Item{
+		Fields: []string{"version", versionDesc}, Depth: 1,
+		ParentIdx: ctlFolderIdx, Action: cmdAction("version"), PropertyOf: -1,
+	})
+
+	// Conditional core commands
+	type coreCmd struct {
+		fields    []string
+		action    string
+		condition string
 	}
+	coreCmds := []coreCmd{
+		{[]string{"update", "Update fzt to latest release"}, "update", "terminal"},
+		{[]string{"updatetimer", "Show time to next sync check"}, "updatetimer", ""},
+		{[]string{"validate", "Validate credential store"}, "validate", ""},
+	}
+	for _, cmd := range coreCmds {
+		if cmd.condition != "" && !hasEnvTag(envTags, cmd.condition) {
+			continue
+		}
+		ctlChildren = append(ctlChildren, idx)
+		idx++
+		items = append(items, core.Item{
+			Fields: cmd.fields, Depth: 1, ParentIdx: ctlFolderIdx,
+			Action: cmdAction(cmd.action), DisplayCondition: cmd.condition, PropertyOf: -1,
+		})
+	}
+
+	// Prepend the : folder itself
+	ctlFolder := core.Item{
+		Fields: []string{":"}, Depth: 0, HasChildren: true,
+		ParentIdx: -1, Children: ctlChildren, Hidden: true, PropertyOf: -1,
+	}
+	return append([]core.Item{ctlFolder}, items...)
 }
 
 // buildTwoLevelCommandTree builds `:` → frontend commands + `::` → core commands.
@@ -148,7 +174,7 @@ func buildCoreLevelCommandTree(registry []string, ctlFolderIdx int, versionIdx i
 // before building the slice. Starting from ctlFolderIdx+1, it reserves indices for:
 // version (1), whoami folder (3), each FrontendCommand + its Children,
 // and the core subfolder. Items must be appended in the same order as indices were reserved.
-func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreIdx int) []core.Item {
+func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreIdx int, envTags []string) []core.Item {
 	idx := ctlFolderIdx + 1
 	var ctlChildren []int
 
@@ -176,21 +202,29 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreId
 	ctlChildren = append(ctlChildren, coreSubfolderIdx)
 	idx++
 
-	// core version — single toggle leaf
+	// core version — always shown
 	coreVersionIdx := idx
 	coreSubChildren := []int{coreVersionIdx}
 	idx++
 
-	coreUpdateIdx := idx
-	coreSubChildren = append(coreSubChildren, coreUpdateIdx)
-	idx++
-
-	coreUpdatetimerIdx := idx
-	coreSubChildren = append(coreSubChildren, coreUpdatetimerIdx)
-	idx++
-
-	coreValidateIdx := idx
-	coreSubChildren = append(coreSubChildren, coreValidateIdx)
+	// Conditional core commands
+	type coreCmd struct {
+		fields    []string
+		action    string
+		condition string
+	}
+	coreCmds := []coreCmd{
+		{[]string{"update", "Update fzt to latest release"}, "update", "terminal"},
+		{[]string{"updatetimer", "Show time to next sync check"}, "updatetimer", ""},
+		{[]string{"validate", "Validate credential store"}, "validate", ""},
+	}
+	for _, cmd := range coreCmds {
+		if cmd.condition != "" && !hasEnvTag(envTags, cmd.condition) {
+			continue
+		}
+		coreSubChildren = append(coreSubChildren, idx)
+		idx++
+	}
 
 	var items []core.Item
 
@@ -255,9 +289,15 @@ func buildTwoLevelCommandTree(s *core.State, ctlFolderIdx int, feIdx int, coreId
 		ParentIdx: coreSubfolderIdx, Action: cmdAction("version"), PropertyOf: -1,
 	})
 
-	items = append(items, core.Item{Fields: []string{"update", "Update fzt to latest release"}, Depth: 2, ParentIdx: coreSubfolderIdx, Action: cmdAction("update"), PropertyOf: -1})
-	items = append(items, core.Item{Fields: []string{"updatetimer", "Show time to next sync check"}, Depth: 2, ParentIdx: coreSubfolderIdx, Action: cmdAction("updatetimer"), PropertyOf: -1})
-	items = append(items, core.Item{Fields: []string{"validate", "Validate credential store"}, Depth: 2, ParentIdx: coreSubfolderIdx, Action: cmdAction("validate"), PropertyOf: -1})
+	for _, cmd := range coreCmds {
+		if cmd.condition != "" && !hasEnvTag(envTags, cmd.condition) {
+			continue
+		}
+		items = append(items, core.Item{
+			Fields: cmd.fields, Depth: 2, ParentIdx: coreSubfolderIdx,
+			Action: cmdAction(cmd.action), DisplayCondition: cmd.condition, PropertyOf: -1,
+		})
+	}
 
 	return items
 }

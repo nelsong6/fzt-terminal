@@ -25,6 +25,7 @@ jobs:
       - name: Update fzt engine
         env:
           GOPROXY: direct
+          GONOSUMCHECK: github.com/nelsong6/*
         run: |
           go get github.com/nelsong6/fzt@latest
           go mod tidy

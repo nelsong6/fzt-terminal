@@ -27,6 +27,7 @@ Shared frontend behavior imported by every fzt app:
 - **`EngineVersion`** -- module-level var injected via ldflags from the build script (reads fzt engine version from go.mod or git describe for local replace).
 - **`IsInCommandScope` / `ScopeCtlTitle`** -- scope awareness for renderers (show "fzt ctl" vs "<frontend> ctl" in the title bar).
 - **`ApplyConfig`** -- sets frontend identity (name, version, commands) from Config onto State before command injection.
+- **EnvTags / DisplayCondition** -- environment-based command filtering. `Config.EnvTags` declares the runtime capabilities (e.g. `["terminal"]` for automate, `["wasm", "browser"]` for the WASM bridge). During command tree construction (`buildCoreLevelCommandTree` / `buildTwoLevelCommandTree`), items with a non-empty `DisplayCondition` are skipped unless the condition string is present in `EnvTags`. Example: the `update` command has `DisplayCondition: "terminal"` so it only appears in the terminal palette, never in the browser. Tags are defined in `core.Config`, propagated to `core.State.EnvTags`, and checked via `hasEnvTag()`. The engine's `core.Item.DisplayCondition` field and `core.State.EnvTags` field are the underlying storage.
 - **`HandleValidate` / `ReadJWTSecret`** (`credential.go`) -- credential store integration via go-keyring (Windows Credential Manager / KWallet / macOS Keychain). HandleValidate is invoked from the validate command in the `::` core palette.
 - **`sync.go`** (root package) -- API-backed menu sync. JWT minting, API fetching (`/api/menu`), YAML serialization to `menu-cache.yaml`. `SyncMenu` fetches and caches the menu (returns item count, version, error). `SaveMenu` PUTs the menu tree with conflict detection via `baseVersion` (409 on stale). Both persist the version number to `.menu-version` for next launch.
 
@@ -61,11 +62,12 @@ JavaScript/CSS for rendering fzt in the browser via WASM:
 
 ### `cmd/wasm/` -- WASM bridge
 
-Compiles to `fzt.wasm`. Exposes a global `fzt` object to JavaScript:
+Compiles to `fzt.wasm`. Sets `EnvTags: ["wasm", "browser"]` so browser-inappropriate commands (e.g. `update`) are filtered out of the palette. Exposes a global `fzt` object to JavaScript:
 
 - `fzt.loadYAML(yaml)` -- parse YAML items
 - `fzt.setFrontend({name, version})` -- register frontend identity
 - `fzt.addCommands([{name, description, action}])` -- register frontend commands for `:` palette
+- `fzt.setLabel(text)` -- set the top-left border label (e.g. user name after auth)
 - `fzt.init(cols, rows)` -- create session, returns `{ansi, cursorX, cursorY}`
 - `fzt.handleKey(key, ctrl, shift)` -- process keyboard event, returns frame + action
 - `fzt.clickRow(row)` -- process mouse click on visual row
@@ -74,7 +76,7 @@ Compiles to `fzt.wasm`. Exposes a global `fzt` object to JavaScript:
 
 ### `cmd/automate/` -- Shell automation binary
 
-Standalone CLI tool: loads a YAML menu, presents an interactive tree picker via `tui.Run`, prints selected leaf to stdout. Shell wrappers execute the selection as a function.
+Standalone CLI tool: loads a YAML menu, presents an interactive tree picker via `tui.Run`, prints selected leaf to stdout. Shell wrappers execute the selection as a function. Sets `EnvTags: ["terminal"]` so terminal-only commands (e.g. `update`) appear in the palette.
 
 Usage: `fzt-automate --yaml <path> [--title "..."] [--header "Name\tDescription"]`
 
@@ -187,6 +189,11 @@ GitHub Actions workflow (`.github/workflows/build.yml`) on push to main:
 - **Internalized shell commands**: load-*, unload, sync handled internally in HandleCommandAction -- no PowerShell function dependencies. load auto-syncs and exits; unload clears cache and exits.
 
 ## Change log
+
+### 2026-04-15
+
+1. **EnvTags / DisplayCondition documentation** -- Documented the environment-based command filtering system across three CLAUDE.md sections: root package (full mechanism), WASM bridge (tags set), automate (tags set). Previously undocumented despite being shipped in the prior session.
+2. **setLabel WASM export documented** -- Added missing `fzt.setLabel(text)` to the WASM bridge API list. Was shipped in the 2026-04-05 session (border label + setLabel WASM export) but never added to the docs.
 
 ### 2026-04-09
 

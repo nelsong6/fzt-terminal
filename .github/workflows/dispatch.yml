@@ -1,0 +1,47 @@
+name: Engine Update
+
+on:
+  repository_dispatch:
+    types: [fzt-engine-updated]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Update fzt engine
+        run: |
+          go get github.com/nelsong6/fzt@latest
+          go mod tidy
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet go.mod go.sum; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Already on latest fzt engine"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "go.mod updated:"
+            git diff go.mod
+          fi
+
+      - name: Commit and push
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          FZT_VERSION=$(grep 'github.com/nelsong6/fzt ' go.mod | awk '{print $2}')
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add go.mod go.sum
+          git commit -m "deps: update fzt engine to ${FZT_VERSION}"
+          git push

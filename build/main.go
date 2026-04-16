@@ -89,7 +89,7 @@ func main() {
 		}
 	}
 
-	ldflags := fmt.Sprintf("-X github.com/nelsong6/fzt/render.Version=%s -X github.com/nelsong6/fzt-terminal.EngineVersion=%s", version, engineVersion)
+	ldflags := fmt.Sprintf("-X github.com/nelsong6/fzt/render.Version=%s -X github.com/nelsong6/fzt-frontend.EngineVersion=%s", version, engineVersion)
 
 	args := []string{"build", "-ldflags", ldflags, "-o", output, pkg}
 	fmt.Printf("go %s\n", strings.Join(args, " "))

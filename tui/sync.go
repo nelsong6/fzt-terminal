@@ -8,13 +8,18 @@ import (
 	"time"
 
 	"github.com/nelsong6/fzt/core"
-	terminal "github.com/nelsong6/fzt-terminal"
+	frontend "github.com/nelsong6/fzt-frontend"
 )
 
 const syncInterval = 20 * 60 // 20 minutes in seconds
 
 // initSyncCheck reads .last-sync-check, sets SyncNextCheck on state,
 // and spawns a background goroutine if a check is due.
+//
+// The actual "fetch from API and compare timestamps" logic lives in
+// frontend.CheckBookmarkStaleness. This file owns only the renderer-side
+// concerns: the timer, UI state mutation (SyncIcon), and posting events
+// back into the tcell event loop.
 func initSyncCheck(s *core.State, cfg Config, postEvent func()) {
 	if cfg.ConfigDir == "" {
 		return
@@ -32,7 +37,7 @@ func initSyncCheck(s *core.State, cfg Config, postEvent func()) {
 	if now >= s.SyncNextCheck {
 		secret := s.JWTSecret
 		go func() {
-			stale := checkBookmarkStaleness(cfg.ConfigDir, secret)
+			stale := frontend.CheckBookmarkStaleness(cfg.ConfigDir, secret)
 			if stale {
 				s.SyncIcon = "⟳"
 			}
@@ -42,44 +47,4 @@ func initSyncCheck(s *core.State, cfg Config, postEvent func()) {
 			postEvent()
 		}()
 	}
-}
-
-// checkBookmarkStaleness checks if the local bookmark cache is older than
-// what the API has.
-func checkBookmarkStaleness(configDir string, secret string) bool {
-	if secret == "" {
-		var err error
-		secret, err = terminal.ReadJWTSecret()
-		if err != nil {
-			return false
-		}
-	}
-
-	_, claims, err := terminal.LoadIdentityClaims(configDir)
-	if err != nil {
-		return false
-	}
-
-	token := terminal.MintJWT(secret, claims)
-	_, _, updatedAt, err := terminal.FetchMenu(token)
-	if err != nil {
-		return false
-	}
-
-	if updatedAt == "" {
-		return false
-	}
-
-	serverTime, err := time.Parse(time.RFC3339Nano, updatedAt)
-	if err != nil {
-		return false
-	}
-
-	cacheFile := filepath.Join(configDir, "menu-cache.yaml")
-	info, err := os.Stat(cacheFile)
-	if err != nil {
-		return true // no cache = stale
-	}
-
-	return serverTime.After(info.ModTime())
 }

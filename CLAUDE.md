@@ -1,24 +1,33 @@
 # fzt-terminal
 
-Ecosystem repo for fzt interactive tools. Provides everything that makes fzt visual and interactive: terminal and browser renderers, the command palette, style system, and frontend behavior. Imports the fzt engine (`github.com/nelsong6/fzt`) for state management, scoring, and tree logic.
+Renderers repo for fzt interactive tools. Provides the terminal renderer (tcell + raw TTY) and the browser renderer (JS + CSS + WASM bridge), plus the automate shell tool. Imports the fzt engine (`github.com/nelsong6/fzt`) for state and scoring, and `github.com/nelsong6/fzt-frontend` for the command palette and shared interaction behavior.
 
 ## Architecture
 
 ```
 fzt (engine)                    fzt-terminal (this repo)
-  core.State, core.HandleKey      command.go      -- command palette, identity, action routing
-  core.TreeContext, scoring        credential.go   -- credential store (go-keyring)
-  render.Canvas, render.Session   sync.go         -- API sync, JWT minting, menu-cache.yaml
-  core.LoadYAML                   tui/            -- terminal renderer (tcell + raw TTY)
-                                  web/            -- browser renderer (JS + CSS)
-                                  cmd/wasm/       -- WASM bridge (Go -> JS)
-                                  cmd/automate/   -- shell automation binary
+  core.State, core.HandleKey      tui/            -- terminal renderer (tcell + raw TTY)
+  core.TreeContext, scoring        web/            -- browser renderer (JS + CSS)
+  render.Canvas, render.Session   cmd/wasm/       -- WASM bridge (Go -> JS)
+  core.LoadYAML                   cmd/automate/   -- shell automation binary
                                   build/          -- build script with version injection
+fzt-frontend (interaction layer)
+  frontend.InjectCommandFolder    consumed by tui/ for palette injection
+  frontend.HandleCommandAction    consumed by tui/ for action routing
+  frontend.CheckBookmarkStaleness  consumed by tui/sync.go for background staleness check
+  frontend.ReadJWTSecret / etc.   palette-command implementations (sync, validate, save, ...)
 ```
+
+The command palette, credential store, and API-backed menu sync used to live
+at the root of this repo (package `terminal`). As of the fzt-frontend split,
+they moved to `nelsong6/fzt-frontend`. This repo now only renders — it does
+not own interaction behavior.
 
 ## Package guide
 
-### `terminal` (root package, `command.go`, `credential.go`, `sync.go`)
+### fzt-frontend (imported, not in this repo)
+
+Shared frontend behavior lives in `github.com/nelsong6/fzt-frontend`:
 
 Shared frontend behavior imported by every fzt app:
 
@@ -148,9 +157,9 @@ All key/click handlers return an action string:
 
 ## Dependencies
 
-- `github.com/nelsong6/fzt v0.1.30` -- engine (state, scoring, tree logic, YAML parsing, render abstractions)
+- `github.com/nelsong6/fzt` -- engine (state, scoring, tree logic, YAML parsing, render abstractions)
+- `github.com/nelsong6/fzt-frontend` -- command palette, identity, action routing, credential store, API-backed menu sync
 - `github.com/gdamore/tcell/v2` -- terminal screen library
-- `github.com/zalando/go-keyring` -- credential store (Windows Credential Manager / KWallet / macOS Keychain)
 - `golang.org/x/term` -- raw terminal mode
 - `golang.org/x/sys` -- Windows console API
 
@@ -168,7 +177,7 @@ go run ./build wasm
 GOOS=js GOARCH=wasm go build -o fzt.wasm ./cmd/wasm
 ```
 
-The build script injects `render.Version` from `git describe --tags --always --dirty` and `terminal.EngineVersion` from the fzt engine version in go.mod (or git describe for local replace) via ldflags.
+The build script injects `render.Version` from `git describe --tags --always --dirty` and `frontend.EngineVersion` from the fzt engine version in go.mod (or git describe for local replace) via ldflags.
 
 ## CI
 

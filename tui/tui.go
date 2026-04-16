@@ -13,7 +13,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/nelsong6/fzt/core"
 	"github.com/nelsong6/fzt/render"
-	terminal "github.com/nelsong6/fzt-terminal"
+	frontend "github.com/nelsong6/fzt-frontend"
 )
 
 // handleShortcut checks for Shift+letter shortcuts.
@@ -83,25 +83,25 @@ func handleShortcut(s *core.State, ev *tcell.EventKey) (string, bool) {
 		return "", false // vim nav, fall through to engine
 	case 'S':
 		item := core.Item{Fields: []string{"sync"}}
-		return terminal.HandleCommandAction(s, item), true
+		return frontend.HandleCommandAction(s, item), true
 	case 'W':
 		item := core.Item{Fields: []string{"save"}}
-		return terminal.HandleCommandAction(s, item), true
+		return frontend.HandleCommandAction(s, item), true
 	case 'A':
 		item := core.Item{Fields: []string{"add-after"}}
-		return terminal.HandleCommandAction(s, item), true
+		return frontend.HandleCommandAction(s, item), true
 	case 'F':
 		item := core.Item{Fields: []string{"add-folder"}}
-		return terminal.HandleCommandAction(s, item), true
+		return frontend.HandleCommandAction(s, item), true
 	case 'R':
 		item := core.Item{Fields: []string{"rename"}}
-		return terminal.HandleCommandAction(s, item), true
+		return frontend.HandleCommandAction(s, item), true
 	case 'D':
 		item := core.Item{Fields: []string{"delete"}}
-		return terminal.HandleCommandAction(s, item), true
+		return frontend.HandleCommandAction(s, item), true
 	case 'I':
 		item := core.Item{Fields: []string{"inspect"}}
-		return terminal.HandleCommandAction(s, item), true
+		return frontend.HandleCommandAction(s, item), true
 	}
 
 	// Any other capital letter — unknown shortcut
@@ -285,11 +285,11 @@ func cleanupInspect(s *core.State) {
 // After internal handling, search state is cleared to prevent stale highlight artifacts.
 func processAction(s *core.State, action string) string {
 	if len(action) > 7 && action[:7] == "select:" {
-		if terminal.IsInCommandScope(s) {
+		if frontend.IsInCommandScope(s) {
 			// Look up the actual item from the tree — the formatted string
 			// may have been truncated by AcceptNth, losing metadata fields.
 			item := findSelectedItem(s)
-			cmdAction := terminal.HandleCommandAction(s, item)
+			cmdAction := frontend.HandleCommandAction(s, item)
 			if cmdAction == "" {
 				// Handled internally — clear search state so top match
 				// highlight doesn't linger on the previously selected item
@@ -344,7 +344,7 @@ func NewSession(items []core.Item, cfg Config, w, h int) *render.Session {
 func NewTreeSession(items []core.Item, cfg Config, w, h int) *render.Session {
 	sess := render.NewTreeSession(items, cfg, w, h, drawUnifiedTreeFunc, renderFrameDrawFunc)
 	applyFrontendConfig(sess.State(), cfg)
-	terminal.InjectCommandFolder(sess.State(), terminal.EngineVersion)
+	frontend.InjectCommandFolder(sess.State(), frontend.EngineVersion)
 	return sess
 }
 
@@ -459,7 +459,7 @@ func applyFrontendConfig(s *core.State, cfg Config) {
 func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string, error) {
 	s, searchCols := core.NewState(items, cfg)
 	applyFrontendConfig(s, cfg)
-	terminal.InjectCommandFolder(s, terminal.EngineVersion)
+	frontend.InjectCommandFolder(s, frontend.EngineVersion)
 	ctx := s.TopCtx()
 	ctx.TreeExpanded = make(map[int]bool)
 	ctx.QueryExpanded = make(map[int]bool)
@@ -614,7 +614,7 @@ func parseSimQuery(query string) []simKey {
 func Simulate(items []core.Item, cfg Config, query string, w, h int, styled bool) []Frame {
 	s, searchCols := core.NewState(items, cfg)
 	applyFrontendConfig(s, cfg)
-	terminal.InjectCommandFolder(s, terminal.EngineVersion)
+	frontend.InjectCommandFolder(s, frontend.EngineVersion)
 
 	if cfg.TreeMode {
 		ctx := s.TopCtx()

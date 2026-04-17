@@ -4,12 +4,10 @@ on:
   repository_dispatch:
     types: [fzt-updated]
 
-# The called reusable workflow declares contents:write + actions:write. Without
-# these granted on the caller, the token falls back to the repo default ('read')
-# and the workflow startup_failures instantly on every dispatch.
 permissions:
   contents: write
   actions: write
+  id-token: write
 
 concurrency:
   group: dependency-update
@@ -20,3 +18,7 @@ jobs:
     uses: nelsong6/pipeline-templates/.github/workflows/go-dependency-update-template.yml@main
     with:
       modules: github.com/nelsong6/fzt github.com/nelsong6/fzt-frontend
+      # Template handles bump + release + dispatch atomically (no race).
+      # Replaces the old separate Tag + Dispatch workflow (build.yml, removed).
+      dispatch-repos: fzt-picker,fzt-automate,fzt-browser
+      dispatch-event: fzt-updated

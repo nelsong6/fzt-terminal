@@ -37,12 +37,54 @@ export function createATRoutes({ requireAuth, container, bookmarksContainer }) {
     return resources[0] || null;
   }
 
+  // Read a named bookmarks-shared doc (e.g. "google") for nested ref resolution.
+  async function getLatestShared(name) {
+    if (!bookmarksContainer) return null;
+    const { resources } = await bookmarksContainer.items.query({
+      query: `SELECT TOP 1 * FROM c
+              WHERE c.type = 'bookmarks-shared' AND c.name = @name
+              ORDER BY c.version DESC`,
+      parameters: [{ name: '@name', value: name }],
+    }, { partitionKey: `shared:${name}` }).fetchAll();
+    return resources[0] || null;
+  }
+
   // Walk the stored menu tree; replace any { ref: "bookmarks" } node with
-  // an expanded copy of the caller's bookmarks, tagged _ref/_refVersion
-  // so PUT can strip back. Other node shapes pass through unchanged.
+  // an expanded copy of the caller's bookmarks (and recursively resolve
+  // any { ref: "<name>" } shared refs inside it). All resolved nodes get
+  // _ref/_refVersion metadata so PUT can strip back.
   async function resolveRefs(menu, userId) {
     if (!Array.isArray(menu)) return menu;
-    let bookmarksDoc = null; // lazy-fetch, reuse if multiple refs
+    let bookmarksDoc = null;
+
+    async function resolveSharedRefs(items, visited = new Set()) {
+      const out = [];
+      for (const item of items) {
+        if (item && item.ref && Object.keys(item).filter(k => k !== '_refError').length === 1) {
+          if (visited.has(item.ref) || visited.size >= 10) {
+            out.push({ ...item, _refError: true });
+            continue;
+          }
+          const sharedDoc = await getLatestShared(item.ref);
+          if (!sharedDoc) {
+            out.push({ ...item, _refError: true });
+            continue;
+          }
+          const node = { ...sharedDoc.bookmarks, _ref: item.ref, _refVersion: sharedDoc.version };
+          if (Array.isArray(node.children) && node.children.length > 0) {
+            const nextVisited = new Set(visited); nextVisited.add(item.ref);
+            node.children = await resolveSharedRefs(node.children, nextVisited);
+          }
+          out.push(node);
+        } else if (Array.isArray(item?.children) && item.children.length > 0) {
+          out.push({ ...item, children: await resolveSharedRefs(item.children, visited) });
+        } else {
+          out.push(item);
+        }
+      }
+      return out;
+    }
+
     async function walk(items) {
       const out = [];
       for (const item of items) {
@@ -57,7 +99,7 @@ export function createATRoutes({ requireAuth, container, bookmarksContainer }) {
           out.push({
             name: item.name,
             description: item.description,
-            children: bookmarksDoc.bookmarks,
+            children: await resolveSharedRefs(bookmarksDoc.bookmarks),
             _ref: 'bookmarks',
             _refVersion: bookmarksDoc.version,
           });

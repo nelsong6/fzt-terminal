@@ -544,7 +544,7 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 				return action, nil
 			case action == "update":
 				screen.Fini()
-				RunUpdate()
+				RunUpdate(s)
 				os.Exit(0)
 			case len(action) > 7 && action[:7] == "select:":
 				return action[7:], nil
@@ -585,7 +585,7 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 				return action, nil
 			case action == "update":
 				screen.Fini()
-				RunUpdate()
+				RunUpdate(s)
 				os.Exit(0)
 			case len(action) > 7 && action[:7] == "select:":
 				return action[7:], nil
@@ -1294,13 +1294,31 @@ func drawBorderSides(c render.Canvas, w, topY, bottomY int) {
 }
 
 
-// RunUpdate downloads the latest fzt release from GitHub if a newer version exists.
-func RunUpdate() {
+// RunUpdate downloads the latest release of the consumer binary from GitHub
+// if a newer version exists. Reads State.UpdateRepo / UpdateAssetPrefix /
+// UpdateBinaryName to know which repo + asset to pull; falls back to fzt
+// defaults when unset.
+func RunUpdate(s *core.State) {
+	repo := "nelsong6/fzt"
+	assetPrefix := "fzt"
+	binaryName := "fzt"
+	if s != nil {
+		if s.UpdateRepo != "" {
+			repo = s.UpdateRepo
+		}
+		if s.UpdateAssetPrefix != "" {
+			assetPrefix = s.UpdateAssetPrefix
+		}
+		if s.UpdateBinaryName != "" {
+			binaryName = s.UpdateBinaryName
+		}
+	}
+
 	current := render.Version
 	fmt.Fprintf(os.Stderr, "Current: %s\n", current)
 
 	// Get latest release tag
-	cmd := exec.Command("gh", "release", "view", "--repo", "nelsong6/fzt", "--json", "tagName", "--jq", ".tagName")
+	cmd := exec.Command("gh", "release", "view", "--repo", repo, "--json", "tagName", "--jq", ".tagName")
 	out, err := cmd.Output()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to check latest release: %v\n", err)
@@ -1316,7 +1334,7 @@ func RunUpdate() {
 
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
-	asset := fmt.Sprintf("fzt-%s-%s", goos, goarch)
+	asset := fmt.Sprintf("%s-%s-%s", assetPrefix, goos, goarch)
 	if goos == "windows" {
 		asset += ".exe"
 	}
@@ -1329,7 +1347,7 @@ func RunUpdate() {
 	dest := filepath.Dir(self)
 
 	fmt.Fprintf(os.Stderr, "Downloading %s...\n", asset)
-	dl := exec.Command("gh", "release", "download", "--repo", "nelsong6/fzt", "--pattern", asset, "--dir", dest, "--clobber")
+	dl := exec.Command("gh", "release", "download", "--repo", repo, "--pattern", asset, "--dir", dest, "--clobber")
 	dl.Stdout = os.Stderr
 	dl.Stderr = os.Stderr
 	if err := dl.Run(); err != nil {
@@ -1337,15 +1355,14 @@ func RunUpdate() {
 		return
 	}
 
-	// Rename to just 'fzt' (or 'fzt.exe').
-	// On Windows the running exe is locked, but renaming it is allowed.
-	// Move the old binary out of the way first, then rename the new one in.
-	final := filepath.Join(dest, "fzt")
+	final := filepath.Join(dest, binaryName)
 	if goos == "windows" {
 		final += ".exe"
 	}
 	downloaded := filepath.Join(dest, asset)
 	if downloaded != final {
+		// On Windows the running exe is locked, but renaming it is allowed.
+		// Move the old binary out of the way first, then rename the new one in.
 		old := final + ".old"
 		os.Remove(old)
 		os.Rename(final, old)

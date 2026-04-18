@@ -1307,7 +1307,7 @@ func drawBorderSides(c render.Canvas, w, topY, bottomY int) {
 // output stays readable; scripted invocations (stderr redirected) skip the
 // pause and exit immediately.
 func RunUpdate(s *core.State) {
-	defer pauseIfInteractive()
+	defer PauseIfInteractive()
 
 	repo := "nelsong6/fzt"
 	assetPrefix := "fzt"
@@ -1387,7 +1387,11 @@ func RunUpdate(s *core.State) {
 	fmt.Fprintf(os.Stderr, "Updated: %s -> %s\n", current, latest)
 }
 
-func pauseIfInteractive() {
+// PauseIfInteractive blocks on Enter if stderr is attached to a TTY.
+// Exported for consumers (fzt-automate, fzt-picker) that exit right after
+// printing status and need the output to stay readable when the shell
+// wrapper closes the terminal window on exit.
+func PauseIfInteractive() {
 	if !term.IsTerminal(int(os.Stderr.Fd())) {
 		return
 	}

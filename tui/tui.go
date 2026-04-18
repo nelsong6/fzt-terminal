@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/nelsong6/fzt/core"
 	"github.com/nelsong6/fzt/render"
 	frontend "github.com/nelsong6/fzt-frontend"
+	"golang.org/x/term"
 )
 
 // handleShortcut checks for Shift+letter shortcuts.
@@ -1298,7 +1300,15 @@ func drawBorderSides(c render.Canvas, w, topY, bottomY int) {
 // if a newer version exists. Reads State.UpdateRepo / UpdateAssetPrefix /
 // UpdateBinaryName to know which repo + asset to pull; falls back to fzt
 // defaults when unset.
+//
+// The caller (tui.Run) typically os.Exit()s right after — which closes the
+// terminal window if fzt-automate was launched as a one-shot. defer a
+// "Press Enter to continue" when stderr is attached to a TTY so the status
+// output stays readable; scripted invocations (stderr redirected) skip the
+// pause and exit immediately.
 func RunUpdate(s *core.State) {
+	defer pauseIfInteractive()
+
 	repo := "nelsong6/fzt"
 	assetPrefix := "fzt"
 	binaryName := "fzt"
@@ -1375,6 +1385,14 @@ func RunUpdate(s *core.State) {
 	}
 
 	fmt.Fprintf(os.Stderr, "Updated: %s -> %s\n", current, latest)
+}
+
+func pauseIfInteractive() {
+	if !term.IsTerminal(int(os.Stderr.Fd())) {
+		return
+	}
+	fmt.Fprint(os.Stderr, "\nPress Enter to continue...")
+	bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
 // RunFilter runs in non-interactive mode (like fzf --filter).

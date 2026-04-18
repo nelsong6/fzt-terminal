@@ -50,7 +50,7 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 		if s.Dirty {
 			icon = "\u25cf" // ●
 		}
-		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, versionStr, titleStyle, icon, cfg.Label)
+		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, versionStr, titleStyle, s.IsPulsing(), icon, cfg.Label)
 		y++
 		borderOffset = 1
 	}

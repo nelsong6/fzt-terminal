@@ -100,5 +100,6 @@ var (
 	PathFg         = tcell.ColorDarkGray
 	TitleSuccessFg = tcell.ColorGreen
 	TitleErrorFg   = tcell.ColorRed
+	TitleNeutralFg = tcell.ColorLightGray  // "registered but no action" — distinct from success
 	SyncIconFg     = tcell.ColorYellow
 )

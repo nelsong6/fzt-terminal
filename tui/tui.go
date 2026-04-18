@@ -398,6 +398,8 @@ func Run(items []core.Item, cfg Config) (string, error) {
 
 	screen.SetStyle(tcell.StyleDefault.Background(tcell.ColorDefault).Foreground(tcell.ColorDefault))
 	screen.EnablePaste()
+	screen.EnableMouse(tcell.MouseButtonEvents)
+	defer screen.DisableMouse()
 
 	if cfg.TreeMode {
 		return runWithSession(screen, items, cfg)
@@ -540,6 +542,42 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 			screen.Sync()
 		case *tcell.EventInterrupt:
 			// tick — redraw picks up countdown updates from drawUnified
+		case *tcell.EventMouse:
+			if s.EditMode != "" {
+				break
+			}
+			btn := ev.Buttons()
+			_, y := ev.Position()
+			var raw string
+			switch {
+			case btn&tcell.Button1 != 0:
+				_, h := screen.Size()
+				raw = core.ClickUnifiedRow(s, y, cfg, h)
+			case btn&tcell.WheelUp != 0:
+				raw = core.HandleUnifiedKey(s, tcell.KeyUp, 0, cfg, searchCols)
+			case btn&tcell.WheelDown != 0:
+				raw = core.HandleUnifiedKey(s, tcell.KeyDown, 0, cfg, searchCols)
+			default:
+				break
+			}
+			action := processAction(s, raw)
+			switch {
+			case action == "":
+			case action == "cancel" || action == "abort":
+				return "", nil
+			case action == "unloaded":
+				return "unloaded", nil
+			case action == "loaded" || action == "synced":
+				return action, nil
+			case action == "update":
+				screen.Fini()
+				RunUpdate()
+				os.Exit(0)
+			case len(action) > 7 && action[:7] == "select:":
+				return action[7:], nil
+			default:
+				return action, nil
+			}
 		}
 	}
 }

@@ -303,6 +303,19 @@ func processAction(s *core.State, action string) string {
 			}
 			return cmdAction // "update", frontend action, etc.
 		}
+		// States inspector: outside the : palette, an action-carrying leaf
+		// would normally exit the picker. When the banner is on we suppress
+		// the exit and stash what would have run, so the user can keep
+		// exploring reachable states.
+		if s.StatesBannerOn {
+			item := findSelectedItem(s)
+			preview := "select " + action[7:]
+			if item.Action != nil {
+				preview = item.Action.Type + ":" + item.Action.Target
+			}
+			s.LastActionPreview = preview
+			return ""
+		}
 	}
 	return action
 }

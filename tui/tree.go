@@ -27,8 +27,13 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 		versionStr := s.VersionDisplay
 		title := cfg.Title
 		titleStyle := 0
-		// TitleOverride always takes priority — it's an explicit message
-		if s.TitleOverride != "" {
+		// StatesBannerOn overrides everything — the inspector is the user's
+		// active tool, and a stale title would obscure the state readout.
+		if s.StatesBannerOn {
+			title = s.Describe()
+			titleStyle = 0
+		} else if s.TitleOverride != "" {
+			// TitleOverride always takes priority — it's an explicit message
 			title = s.TitleOverride
 			titleStyle = s.TitleStyle
 		} else if s.SyncTimerShown && s.SyncNextCheck > 0 {

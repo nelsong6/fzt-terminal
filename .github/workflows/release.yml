@@ -1,0 +1,28 @@
+name: Release
+
+# Fires on direct pushes to main. See the fzt-frontend release.yml for the
+# full pattern explanation; this file mirrors it with fzt-terminal's
+# downstream consumer list.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'go.mod'
+      - 'go.sum'
+
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+  id-token: write
+
+jobs:
+  release:
+    uses: nelsong6/pipeline-templates/.github/workflows/release-and-dispatch-template.yml@main
+    with:
+      dispatch-repos: fzt-picker,fzt-automate,fzt-browser
+      dispatch-event: fzt-updated

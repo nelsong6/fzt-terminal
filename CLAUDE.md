@@ -149,6 +149,15 @@ GitHub Actions workflow (`.github/workflows/build.yml`) on push to main is a tag
 
 The `packages/routes/` Node.js package has its own `publish-routes.yml` workflow (unchanged).
 
+## `packages/routes/` — AT menu routes
+
+Exports `createATRoutes({ requireAuth, container, bookmarksContainer })`:
+
+- `container` — Cosmos `HomepageDB.userdata` for menu tree docs (type='menu', append-only versioned, partition `/userId`).
+- `bookmarksContainer` — Cosmos `HomepageDB.fzt-frontend-data` for homepage bookmarks. Optional; only needed for ref resolution.
+
+Menu docs can contain `{ ref: "bookmarks" }` nodes. On GET, the ref resolver inlines the caller's `type='bookmarks'` doc from `bookmarksContainer`, and recursively resolves any `{ ref: "<name>" }` nodes inside against `type='bookmarks-shared'` docs. Resolved nodes carry `_ref`/`_refVersion` metadata so PUT strips them back to pointer form before storage. Edits under the bookmarks subtree are read-only from automate's side — they don't write through to the bookmarks doc.
+
 ## Key patterns
 
 - **Headless sessions**: `tui.NewSession` / `tui.NewTreeSession` create sessions that render to `MemScreen` without a real terminal. Used by WASM bridge and `Simulate`.

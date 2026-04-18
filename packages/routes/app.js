@@ -5,16 +5,91 @@ import { Router } from 'express';
  * Menu versions are append-only documents in Cosmos DB (HomepageDB/userdata).
  * Each save creates a new version. GET returns the latest. No mutations.
  *
+ * Menu trees may contain `{ ref: "bookmarks" }` nodes that resolve at read
+ * time to the caller's homepage bookmarks (from bookmarksContainer). On
+ * write, the resolved form is stripped back to the pointer — edits under
+ * the bookmark subtree are read-only from automate's side and aren't
+ * written through to the bookmarks doc.
+ *
  * @param {{
  *   requireAuth: Function,
  *   container: import('@azure/cosmos').Container,
+ *   bookmarksContainer?: import('@azure/cosmos').Container,
  * }} opts
  */
-export function createATRoutes({ requireAuth, container }) {
+export function createATRoutes({ requireAuth, container, bookmarksContainer }) {
   const router = Router();
 
   function versionDocId(userId, version) {
     return `menu_${userId}_v${version}`;
+  }
+
+  // Read the caller's latest bookmarks doc from the fzt-frontend-data
+  // container. Returns { bookmarks, version, updatedAt } or null.
+  async function getLatestBookmarks(userId) {
+    if (!bookmarksContainer) return null;
+    const { resources } = await bookmarksContainer.items.query({
+      query: `SELECT TOP 1 * FROM c
+              WHERE c.type = 'bookmarks' AND c.userId = @userId
+              ORDER BY c.version DESC`,
+      parameters: [{ name: '@userId', value: userId }],
+    }, { partitionKey: userId }).fetchAll();
+    return resources[0] || null;
+  }
+
+  // Walk the stored menu tree; replace any { ref: "bookmarks" } node with
+  // an expanded copy of the caller's bookmarks, tagged _ref/_refVersion
+  // so PUT can strip back. Other node shapes pass through unchanged.
+  async function resolveRefs(menu, userId) {
+    if (!Array.isArray(menu)) return menu;
+    let bookmarksDoc = null; // lazy-fetch, reuse if multiple refs
+    async function walk(items) {
+      const out = [];
+      for (const item of items) {
+        if (item && item.ref === 'bookmarks') {
+          if (bookmarksDoc === null) {
+            bookmarksDoc = await getLatestBookmarks(userId);
+          }
+          if (!bookmarksDoc) {
+            out.push({ ...item, _refError: true });
+            continue;
+          }
+          out.push({
+            name: item.name,
+            description: item.description,
+            children: bookmarksDoc.bookmarks,
+            _ref: 'bookmarks',
+            _refVersion: bookmarksDoc.version,
+          });
+        } else if (Array.isArray(item?.children) && item.children.length > 0) {
+          out.push({ ...item, children: await walk(item.children) });
+        } else {
+          out.push(item);
+        }
+      }
+      return out;
+    }
+    return walk(menu);
+  }
+
+  // Reverse of resolveRefs on PUT — drop resolved children from any node
+  // tagged _ref and restore the pointer form. Read-only: edits under the
+  // bookmarks subtree don't write back to the bookmarks doc.
+  function stripRefs(menu) {
+    if (!Array.isArray(menu)) return menu;
+    return menu.map(item => {
+      if (!item || typeof item !== 'object') return item;
+      if (item._ref === 'bookmarks') {
+        const out = { ref: 'bookmarks' };
+        if (item.name) out.name = item.name;
+        if (item.description) out.description = item.description;
+        return out;
+      }
+      if (Array.isArray(item.children) && item.children.length > 0) {
+        return { ...item, children: stripRefs(item.children) };
+      }
+      return item;
+    });
   }
 
   // Find the latest version number for a user.
@@ -43,8 +118,10 @@ export function createATRoutes({ requireAuth, container }) {
         return res.json({ menu: [], version: 0, updatedAt: null });
       }
 
+      const resolvedMenu = await resolveRefs(resource.menu, userId);
+
       res.json({
-        menu: resource.menu,
+        menu: resolvedMenu,
         version: resource.version,
         updatedAt: resource.updatedAt,
       });
@@ -63,6 +140,10 @@ export function createATRoutes({ requireAuth, container }) {
       if (!Array.isArray(menu)) {
         return res.status(400).json({ error: 'Request body must contain a menu array' });
       }
+
+      // Strip resolved refs back to pointers before storing. Bookmarks live
+      // in their own doc; the menu should only hold { ref } markers.
+      const menuToStore = stripRefs(menu);
 
       const latestVersion = await getLatestVersion(userId);
 
@@ -86,11 +167,13 @@ export function createATRoutes({ requireAuth, container }) {
         userId,
         type: 'menu',
         version: newVersion,
-        menu,
+        menu: menuToStore,
         updatedAt: now,
       });
 
-      res.json({ menu, version: newVersion, updatedAt: now });
+      // Return the resolved form so the client sees the same tree shape.
+      const resolvedMenu = await resolveRefs(menuToStore, userId);
+      res.json({ menu: resolvedMenu, version: newVersion, updatedAt: now });
     } catch (error) {
       console.error('Error saving menu:', error);
       res.status(500).json({ error: 'Failed to save menu', message: error.message });

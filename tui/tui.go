@@ -76,48 +76,11 @@ func handleShortcut(s *core.State, ev *tcell.EventKey) (string, bool) {
 		}
 	}
 
-	if ev.Key() != tcell.KeyRune {
-		return "", false
-	}
-
-	ch := ev.Rune()
-
-	switch ch {
-	case 'H', 'J', 'K', 'L':
-		if s.EditMode == "" {
-			arrows := map[rune]string{'H': "\u2190", 'J': "\u2193", 'K': "\u2191", 'L': "\u2192"}
-			s.SetTitle(arrows[ch], 1)
-		}
-		return "", false // vim nav, fall through to engine
-	case 'S':
-		item := core.Item{Fields: []string{"sync"}}
-		return frontend.HandleCommandAction(s, item), true
-	case 'W':
-		item := core.Item{Fields: []string{"save"}}
-		return frontend.HandleCommandAction(s, item), true
-	case 'A':
-		item := core.Item{Fields: []string{"add-after"}}
-		return frontend.HandleCommandAction(s, item), true
-	case 'F':
-		item := core.Item{Fields: []string{"add-folder"}}
-		return frontend.HandleCommandAction(s, item), true
-	case 'R':
-		item := core.Item{Fields: []string{"rename"}}
-		return frontend.HandleCommandAction(s, item), true
-	case 'D':
-		item := core.Item{Fields: []string{"delete"}}
-		return frontend.HandleCommandAction(s, item), true
-	case 'I':
-		item := core.Item{Fields: []string{"inspect"}}
-		return frontend.HandleCommandAction(s, item), true
-	}
-
-	// Any other capital letter — unknown shortcut
-	if ch >= 'A' && ch <= 'Z' {
-		s.SetTitle("?", 2)
-		return "", true
-	}
-
+	// Shift+letter is no longer a shortcut namespace — under the search-default /
+	// explicit-normal-mode model, capitals in search mode go into the query as
+	// literal characters, and normal mode has its own lowercase-letter bindings
+	// handled in core (hjkl nav). Palette commands (sync/save/add/etc) are reached
+	// via the `:` folder, not via Shift+letter chords.
 	return "", false
 }
 

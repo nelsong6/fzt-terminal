@@ -128,35 +128,42 @@ All key/click handlers return an action string:
 - Homepage bookmark integration: `my-homepage/frontend/fzh-terminal.js`
 - Config field semantics: `fzt/CLAUDE.md` "Config field relationships"
 
-## Modifier policy
+## Keyboard model
 
-**Shift is the only modifier used in any fzt shortcut. No Ctrl, Alt, or Meta bindings — anywhere, for anything.** Applies to every repo in the ecosystem (fzt, fzt-terminal, fzt-picker, fzt-browser, fzt-frontend, fzt-automate, my-homepage, and any future consumer).
+Two explicit modes, search-as-default, Shift-is-Shift.
 
-### Why Shift works as the sole modifier
+### Search mode (default)
 
-fzt's search scoring is case-insensitive, and by policy `Shift+letter` is a no-op for text input — it doesn't insert a capital letter, it doesn't reach the search handler at all. That frees the entire `Shift+X` namespace as shortcut space without shadowing any search character. Typing `Shift+H` in the prompt produces the vim-left nav shortcut, not an "H".
+Typing fills the query. Shift behaves as a normal keyboard modifier — capitals and shifted symbols (`!@#$%^&*(_)+`) are literal query characters. No Shift+letter shortcuts; no Ctrl/Alt/Meta shortcuts anywhere. Every printable key is input.
 
-### Consequence: capital letter input is currently unsupported
+### Normal mode
 
-Any context that truly needs capital letters (passwords, case-sensitive URLs, mixed-case display names in rename/inspect mode) has no mechanism yet. A future solution — sticky-caps toggle, chord, or mode-specific override inside `EditMode` — is tracked by [my-homepage#23](https://github.com/nelsong6/my-homepage/issues/23).
+Entered explicitly via `` ` `` (backtick — matches Quake/Source/VS Code "console" gesture) or implicitly by pressing an arrow key. Cursor is visible on a tree row; the prompt icon switches from magnifying glass (🔍) to arrow (→) to signal the mode change. Query is preserved — normal mode does not touch it.
 
-### Current Shift allocations
+Bound keys:
 
-- `Shift+H` / `Shift+J` / `Shift+K` / `Shift+L` — vim nav (left / down / up / right) with arrow-key feedback
-- `Shift+S` — sync menu from cloud
-- `Shift+W` — save to cloud
-- `Shift+A` — add item after cursor
-- `Shift+F` — create folder at cursor
-- `Shift+R` / `Shift+I` — edit item properties (inspect view)
-- `Shift+D` — delete highlighted item
-- `Shift+Enter` — confirm action modes (add/rename/inspect)
-- `Shift+Backspace` — return to home / reset navigation
+- `h` / `j` / `k` / `l` — vim nav (left / down / up / right). Lowercase only; capital HJKL is input, not nav.
+- Arrow keys — same as hjkl.
+- Every other letter — silent (future: dead-key hint, tracked by [fzt#11](https://github.com/nelsong6/fzt/issues/11)).
 
-Unknown shortcuts render a red `?` in the title bar. The `Shortcuts` folder in the `:` palette is the discoverability surface.
+Exits to search:
+
+- `/` — return to search, query preserved verbatim.
+- `Backspace` — return to search, chop the last char of the query. Useful for "I want something like this but not exactly this."
+
+### Why this layout
+
+fzt's "fuzzy match is navigation" thesis means search is the primary interaction; typing fills the query and Enter commits. Shift-as-Shift keeps the keyboard's shifted characters available for search input (filenames with punctuation, mixed-case queries). Normal mode is a secondary state for when the user wants to nav a visible cursor — an explicit mode instead of a fuzzy auto-transition. One entry gesture (backtick, or any arrow), two exits (`/` preserve, Backspace chop).
+
+Single-letter palette commands (sync, save, add, etc.) live in the `:` folder — fuzzy-matchable by name. The `:` folder is visible at root (not hidden) so it's discoverable by scanning, not just tribal knowledge. Shift+letter is NOT a shortcut namespace; that pattern was retired.
+
+### Capital letter input
+
+Currently unsupported in any fzt text-input context. Shift is Shift for symbols, but capitals for rename/property-edit mode don't have a clean mechanism yet (CapsLock works as an OS-level workaround). A future chord or sticky-caps mode is tracked by [my-homepage#23](https://github.com/nelsong6/my-homepage/issues/23).
 
 ### Legacy Ctrl bindings
 
-Several Ctrl bindings still exist in `fzt/core/input.go`, its inline-mode mirror in `fzt-terminal/tui/keyparse.go`, and `fzt-picker/frontend/cgo/picker.go` (Ctrl+C cancel, Ctrl+P/N nav, Ctrl+A/E line nav, Ctrl+U clear query, Ctrl+W delete word). These are **scheduled for removal**, not an exception. New code MUST NOT introduce any Ctrl binding. Escape replaces Ctrl+C; arrow keys replace Ctrl+P/N; Home/End replace Ctrl+A/E; Shift+Backspace or Escape replaces Ctrl+U; no replacement for Ctrl+W is planned.
+Several Ctrl bindings still exist in `fzt/core/input.go` (Ctrl+C cancel, Ctrl+P/N nav, Ctrl+A/E line nav, Ctrl+U clear query, Ctrl+W delete word) and `fzt-picker/frontend/cgo/picker.go` (Ctrl+C/U/W). These predate the current model and are **scheduled for removal** by [my-homepage#24](https://github.com/nelsong6/my-homepage/issues/24). New code MUST NOT introduce any Ctrl binding. Escape replaces Ctrl+C; arrow keys replace Ctrl+P/N; Home/End replace Ctrl+A/E; Backspace/`/` replaces Ctrl+U; no replacement for Ctrl+W is planned.
 
 ## Dependencies
 

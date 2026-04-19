@@ -23,9 +23,15 @@ import (
 // or ("", false) to fall through to normal input handling.
 // HJKL are reserved for vim nav and handled by the engine.
 func handleShortcut(s *core.State, ev *tcell.EventKey) (string, bool) {
-	// Shift+Enter — confirmation key for action modes
+	// Shift+Enter — in action/edit modes this triggers TUI-level confirmation
+	// (add-after, add-folder, delete, inspect, rename-prop, property-edit).
+	// Outside those modes, fall through so core.HandleUnifiedKey treats it as
+	// a universal confirm-select.
 	if ev.Key() == tcell.KeyEnter && ev.Modifiers()&tcell.ModShift != 0 {
-		return handleShiftEnter(s), true
+		if s.EditMode != "" || s.InspectTargetIdx >= 0 {
+			return handleShiftEnter(s), true
+		}
+		return "", false
 	}
 
 	// Shift+Backspace — reset navigation to root, preserve edit mode
@@ -441,7 +447,8 @@ func Run(items []core.Item, cfg Config) (string, error) {
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
-			raw := core.HandleKeyEvent(s, ev.Key(), ev.Rune(), cfg, searchCols)
+			shift := ev.Modifiers()&tcell.ModShift != 0
+			raw := core.HandleKeyEvent(s, ev.Key(), ev.Rune(), shift, cfg, searchCols)
 			action := processAction(s, raw)
 			switch {
 			case action == "":
@@ -548,7 +555,8 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 				break
 			}
 			wasRenaming := s.EditMode == "rename"
-			raw := core.HandleUnifiedKey(s, ev.Key(), ev.Rune(), cfg, searchCols)
+			shift := ev.Modifiers()&tcell.ModShift != 0
+			raw := core.HandleUnifiedKey(s, ev.Key(), ev.Rune(), shift, cfg, searchCols)
 			// Auto-close inspect view only after a property edit is confirmed
 			if wasRenaming && s.EditMode == "" && s.InspectTargetIdx >= 0 {
 				cleanupInspect(s)
@@ -589,9 +597,9 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 				_, h := screen.Size()
 				raw = core.ClickUnifiedRow(s, y, cfg, h)
 			case btn&tcell.WheelUp != 0:
-				raw = core.HandleUnifiedKey(s, tcell.KeyUp, 0, cfg, searchCols)
+				raw = core.HandleUnifiedKey(s, tcell.KeyUp, 0, false, cfg, searchCols)
 			case btn&tcell.WheelDown != 0:
-				raw = core.HandleUnifiedKey(s, tcell.KeyDown, 0, cfg, searchCols)
+				raw = core.HandleUnifiedKey(s, tcell.KeyDown, 0, false, cfg, searchCols)
 			default:
 				break
 			}
@@ -625,12 +633,13 @@ func runWithSession(screen tcell.Screen, items []core.Item, cfg Config) (string,
 type simKey struct {
 	key   tcell.Key
 	ch    rune
+	shift bool
 	label string
 }
 
 // parseSimQuery parses a sim-query string into key events.
-// Supports {up}, {down}, {left}, {right}, {enter}, {tab}, {esc}, {bs}, {space},
-// {ctrl+u}, {ctrl+w}. Plain characters are literal key presses.
+// Supports {up}, {down}, {left}, {right}, {enter}, {shift+enter}, {tab}, {esc},
+// {bs}, {space}, {ctrl+u}, {ctrl+w}. Plain characters are literal key presses.
 func parseSimQuery(query string) []simKey {
 	var keys []simKey
 	runes := []rune(query)
@@ -657,6 +666,8 @@ func parseSimQuery(query string) []simKey {
 					sk = simKey{key: tcell.KeyRight, label: "Right"}
 				case "enter":
 					sk = simKey{key: tcell.KeyEnter, label: "Enter"}
+				case "shift+enter":
+					sk = simKey{key: tcell.KeyEnter, shift: true, label: "Shift+Enter"}
 				case "tab":
 					sk = simKey{key: tcell.KeyTab, label: "Tab"}
 				case "esc":
@@ -722,9 +733,9 @@ func Simulate(items []core.Item, cfg Config, query string, w, h int, styled bool
 	keys := parseSimQuery(query)
 	for _, sk := range keys {
 		if cfg.TreeMode {
-			core.HandleUnifiedKey(s, sk.key, sk.ch, cfg, searchCols)
+			core.HandleUnifiedKey(s, sk.key, sk.ch, sk.shift, cfg, searchCols)
 		} else {
-			core.HandleKeyEvent(s, sk.key, sk.ch, cfg, searchCols)
+			core.HandleKeyEvent(s, sk.key, sk.ch, sk.shift, cfg, searchCols)
 		}
 
 		label := fmt.Sprintf("key: %s  query: \"%s\"", sk.label, string(s.TopCtx().Query))

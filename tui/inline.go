@@ -127,11 +127,13 @@ func RunInline(items []core.Item, cfg Config) (string, error) {
 			continue
 		}
 
+		// Inline mode reads raw bytes and can't recover modifier state,
+		// so shift is always false here. Shift+Enter is a non-op in inline.
 		var action string
 		if inlineCfg.TreeMode {
-			action = core.HandleUnifiedKey(s, key, ch, inlineCfg, searchCols)
+			action = core.HandleUnifiedKey(s, key, ch, false, inlineCfg, searchCols)
 		} else {
-			action = core.HandleKeyEvent(s, key, ch, inlineCfg, searchCols)
+			action = core.HandleKeyEvent(s, key, ch, false, inlineCfg, searchCols)
 		}
 		doRender()
 

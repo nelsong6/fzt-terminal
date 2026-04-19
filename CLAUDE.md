@@ -126,44 +126,82 @@ All key/click handlers return an action string:
 
 Two explicit modes, search-as-default, Shift-is-Shift.
 
-### Search mode (default)
+### States
 
-Typing fills the query. Shift behaves as a normal keyboard modifier — capitals and shifted symbols (`!@#$%^&*(_)+`) are literal query characters. No Shift+letter shortcuts; no Ctrl/Alt/Meta shortcuts anywhere. Every printable key is input.
+fzt has two primary modes and several edit modes. The primary modes are mutually exclusive. Edit modes layer on top and disable most of the primary mode's keys until the edit is confirmed or canceled.
 
-### Normal mode
+**Search mode** (default). Typing fills the query; Enter commits the top match or scopes into the top folder; arrows or backtick enter normal mode. Prompt icon: magnifying glass (`\uF002`, yellow).
 
-Entered explicitly via `` ` `` (backtick — matches Quake/Source/VS Code "console" gesture) or implicitly by pressing an arrow key. Cursor is visible on a tree row; the prompt icon switches from magnifying glass (🔍) to arrow (→) to signal the mode change. Query is preserved — normal mode does not touch it.
+**Normal mode** (cursor on tree). Typing is no longer input; lowercase `hjkl` navigates; `/` or Backspace return to search. Prompt icon: arrow (`\uF0A9`, teal).
 
-Bound keys:
+**Edit modes** (`State.EditMode` non-empty). Entered from palette commands (`rename`, `add-after`, `add-folder`, `delete`, `inspect`). Under rename or property-edit, every printable key goes to `EditBuffer` via `handleRenameKey`; Enter confirms, Escape cancels. Under the other edit modes, the user navigates to a target and confirms with `Shift+Enter`.
 
-- `h` / `j` / `k` / `l` — vim nav (left / down / up / right). Lowercase only; capital HJKL is input, not nav.
-- Arrow keys — same as hjkl.
-- Every other letter — silent (future: dead-key hint, tracked by [fzt#11](https://github.com/nelsong6/fzt/issues/11)).
+Additional ambient flags: `StatesBannerOn` (action-preview inspector; suppresses leaf execution), `InspectTargetIdx >= 0` (inspection property rows visible under the target). Neither changes key meaning significantly but both affect rendering.
 
-Exits to search:
+### Key table, by mode
 
-- `/` — return to search, query preserved verbatim.
-- `Backspace` — return to search, chop the last char of the query. Useful for "I want something like this but not exactly this."
+Legend: ✓ = handled, ▸ = has side effect, — = unbound / silent, ↩ = transitions to another state.
 
-### Why this layout
+| key | search | normal | rename / property-edit |
+|---|---|---|---|
+| printable rune (incl. capital, symbol) | ✓ append to query | — silent (except `h`/`j`/`k`/`l` / `/`) | ✓ append to `EditBuffer` |
+| `h`/`j`/`k`/`l` (lowercase) | ✓ append to query | ✓ nav left/down/up/right | ✓ append to buffer |
+| `/` | ✓ activate search from root (no-op if already active) | ↩ return to search, query preserved | ✓ append `/` to buffer |
+| `` ` `` (backtick) | ↩ enter normal mode | — | ✓ append backtick to buffer |
+| `:` | ✓ append `:` to query (matches `:` folder at root via fuzzy) | — | ✓ append to buffer |
+| Space | ▸ on folder at cursor: push scope; else append to query | ▸ push scope on cursor's folder | ✓ append space to buffer |
+| Arrow keys | ↩ enter normal mode + move cursor | ✓ move cursor | — |
+| Tab | ✓ autocomplete top match (folder: also push scope) | — | — |
+| Enter | ✓ select top match or scoped leaf; push scope on folder | ✓ same | ✓ confirm edit |
+| Shift+Enter | ✓ universal confirm-select (commits cursor's item, no scope push on folder) | ✓ same | ✓ confirm edit mode action (add / rename / delete / inspect) |
+| Backspace | ✓ delete last query char; on empty query, pop scope | ↩ chop last query char + return to search | ✓ delete last char of buffer |
+| Shift+Backspace | ▸ reset navigation to home (pop all scope) | ▸ same | ▸ same; preserves edit mode |
+| Home / End | ✓ move query cursor to start / end | — | — |
+| Escape | ▸ unwind cascade (see below) | ▸ unwind cascade | ↩ cancel edit, return to prior mode |
 
-fzt's "fuzzy match is navigation" thesis means search is the primary interaction; typing fills the query and Enter commits. Shift-as-Shift keeps the keyboard's shifted characters available for search input (filenames with punctuation, mixed-case queries). Normal mode is a secondary state for when the user wants to nav a visible cursor — an explicit mode instead of a fuzzy auto-transition. One entry gesture (backtick, or any arrow), two exits (`/` preserve, Backspace chop).
+### Back-out / unwind cascade
 
-Single-letter palette commands (sync, save, add, etc.) live in the `:` folder — fuzzy-matchable by name. The `:` folder is visible at root (not hidden) so it's discoverable by scanning, not just tribal knowledge. Shift+letter is NOT a shortcut namespace; that pattern was retired.
+Escape performs progressive unwind. Each press steps back one layer; reaching root exits the picker.
+
+1. **Edit / inspect mode active** → cancel the edit, clear `EditMode`, clean up any property rows, return to the prior mode (search or normal).
+2. **Non-empty query** → clear the query; stay in search mode.
+3. **Scope depth > 1** → pop one scope level.
+4. **Context stack > 1** (e.g. scoped into `:` palette as a pushed context) → pop one context.
+5. **At root with empty query, nothing to unwind** → `s.Cancelled = true`, picker returns "cancel".
+
+Shift+Backspace collapses steps 2–4 into a single gesture — resets to home (pop all scope, clear query, clear filtered). Preserves the active edit mode when one is set, so the user doesn't lose an in-progress add/rename while re-orienting.
+
+Backspace on an empty query at scope > 1 does step 3 (pop scope) without needing Escape. Backspace on an empty query at root with context stack > 1 pops a context.
+
+### Modifier policy
+
+- **Shift**: keyboard modifier for capitals and shifted symbols. Passes through as the literal character. Not a shortcut namespace.
+- **Ctrl**: no bindings anywhere. Removed in `my-homepage#24`; see "Retired Ctrl" below.
+- **Alt / Meta**: never used.
+
+Why: search scoring is case-insensitive so capitals and lowercase produce identical matches, but users still need symbols and — when editing — actual capitals. Reserving Shift globally for a shortcut namespace cost more than it saved. `:` palette commands are fuzzy-matchable by name, so "save" + Enter substitutes for what used to be Shift+W.
 
 ### Capital letter input
 
-Currently unsupported in any fzt text-input context. Shift is Shift for symbols, but capitals for rename/property-edit mode don't have a clean mechanism yet (CapsLock works as an OS-level workaround). A future chord or sticky-caps mode is tracked by [my-homepage#23](https://github.com/nelsong6/my-homepage/issues/23).
+Currently typeable in any edit buffer (rename / property-edit / add-*) because `handleRenameKey` accepts every rune. In search mode they also go into the query; case-insensitive scoring makes them behave identically to lowercase. CapsLock works as an OS-level workaround when the keyboard layout can't produce the character otherwise. A future chord or sticky-caps mode is tracked by [my-homepage#23](https://github.com/nelsong6/my-homepage/issues/23).
 
-### Replacements for retired Ctrl bindings
+### Retired Ctrl bindings
 
-All Ctrl bindings have been removed from the engine and the picker (my-homepage#24). Replacements:
+All Ctrl bindings have been removed from the engine and the picker. Replacements:
 
-- Escape cancels (was Ctrl+C)
-- Arrow keys navigate (was Ctrl+P/N)
-- Home / End move cursor within the query (was Ctrl+A/E)
-- Escape clears the query (was Ctrl+U)
-- No direct replacement for "delete word" (was Ctrl+W) — backspace repeatedly, or Escape-to-clear + retype
+| was | now |
+|---|---|
+| Ctrl+C (cancel) | Escape from root |
+| Ctrl+P / Ctrl+N (nav) | Arrow keys, or lowercase `k` / `j` in normal mode |
+| Ctrl+A / Ctrl+E (line nav) | Home / End |
+| Ctrl+U (clear query) | Escape on non-empty query |
+| Ctrl+W (delete word) | Backspace repeatedly, or Escape to clear and retype |
+
+### Shortcut manifest
+
+The canonical list of key → action mappings lives in `fzt-frontend/command.go`'s `helpEntries()` function, rendered into the `:help/` palette subfolder at runtime. Every fzt consumer gets the same list; users can scope into `:help/` (or fuzzy-match `help` from root) to browse every binding with its long-form description. Each entry carries `Action = "help-entry"`, which `HandleCommandAction` maps to a title-bar pulse so pressing Enter on a help row echoes the description.
+
+This doc is the narrative reference. The palette is the runtime reference. A visual state-transition diagram is tracked by [fzt#10](https://github.com/nelsong6/fzt/issues/10) and will live under `diagrams.romaine.life/fzt/keyboard` when built.
 
 New code MUST NOT introduce any Ctrl, Alt, or Meta binding.
 

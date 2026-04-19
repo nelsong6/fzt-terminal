@@ -128,6 +128,36 @@ All key/click handlers return an action string:
 - Homepage bookmark integration: `my-homepage/frontend/fzh-terminal.js`
 - Config field semantics: `fzt/CLAUDE.md` "Config field relationships"
 
+## Modifier policy
+
+**Shift is the only modifier used in any fzt shortcut. No Ctrl, Alt, or Meta bindings — anywhere, for anything.** Applies to every repo in the ecosystem (fzt, fzt-terminal, fzt-picker, fzt-browser, fzt-frontend, fzt-automate, my-homepage, and any future consumer).
+
+### Why Shift works as the sole modifier
+
+fzt's search scoring is case-insensitive, and by policy `Shift+letter` is a no-op for text input — it doesn't insert a capital letter, it doesn't reach the search handler at all. That frees the entire `Shift+X` namespace as shortcut space without shadowing any search character. Typing `Shift+H` in the prompt produces the vim-left nav shortcut, not an "H".
+
+### Consequence: capital letter input is currently unsupported
+
+Any context that truly needs capital letters (passwords, case-sensitive URLs, mixed-case display names in rename/inspect mode) has no mechanism yet. A future solution — sticky-caps toggle, chord, or mode-specific override inside `EditMode` — is tracked by [my-homepage#23](https://github.com/nelsong6/my-homepage/issues/23).
+
+### Current Shift allocations
+
+- `Shift+H` / `Shift+J` / `Shift+K` / `Shift+L` — vim nav (left / down / up / right) with arrow-key feedback
+- `Shift+S` — sync menu from cloud
+- `Shift+W` — save to cloud
+- `Shift+A` — add item after cursor
+- `Shift+F` — create folder at cursor
+- `Shift+R` / `Shift+I` — edit item properties (inspect view)
+- `Shift+D` — delete highlighted item
+- `Shift+Enter` — confirm action modes (add/rename/inspect)
+- `Shift+Backspace` — return to home / reset navigation
+
+Unknown shortcuts render a red `?` in the title bar. The `Shortcuts` folder in the `:` palette is the discoverability surface.
+
+### Legacy Ctrl bindings
+
+Several Ctrl bindings still exist in `fzt/core/input.go`, its inline-mode mirror in `fzt-terminal/tui/keyparse.go`, and `fzt-picker/frontend/cgo/picker.go` (Ctrl+C cancel, Ctrl+P/N nav, Ctrl+A/E line nav, Ctrl+U clear query, Ctrl+W delete word). These are **scheduled for removal**, not an exception. New code MUST NOT introduce any Ctrl binding. Escape replaces Ctrl+C; arrow keys replace Ctrl+P/N; Home/End replace Ctrl+A/E; Shift+Backspace or Escape replaces Ctrl+U; no replacement for Ctrl+W is planned.
+
 ## Dependencies
 
 - `github.com/nelsong6/fzt` -- engine (state, scoring, tree logic, YAML parsing, render abstractions)

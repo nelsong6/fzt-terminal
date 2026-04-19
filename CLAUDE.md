@@ -9,7 +9,7 @@ The other half of the old fzt-terminal — the browser renderer and the WASM bri
 ```
 fzt (engine)                    fzt-terminal (this repo)
   core.State, core.HandleKey      tui/                -- terminal renderer (tcell + raw TTY)
-  core.TreeContext, scoring        packages/routes/    -- @nelsong6/fzt-terminal-routes (AT menu API)
+  core.TreeContext, scoring
   render.Canvas, render.Session
 
 fzt-frontend (interaction layer)
@@ -38,7 +38,7 @@ Shared frontend behavior imported by every fzt app:
 - **`ApplyConfig`** -- sets frontend identity (name, version, commands) from Config onto State before command injection.
 - **EnvTags / DisplayCondition** -- environment-based command filtering. `Config.EnvTags` declares the runtime capabilities (e.g. `["terminal"]` for automate, `["wasm", "browser"]` for the WASM bridge). During command tree construction (`buildCoreLevelCommandTree` / `buildTwoLevelCommandTree`), items with a non-empty `DisplayCondition` are skipped unless the condition string is present in `EnvTags`. Example: the `update` command has `DisplayCondition: "terminal"` so it only appears in the terminal palette, never in the browser. Tags are defined in `core.Config`, propagated to `core.State.EnvTags`, and checked via `hasEnvTag()`. The engine's `core.Item.DisplayCondition` field and `core.State.EnvTags` field are the underlying storage.
 - **`HandleValidate` / `ReadJWTSecret`** (`credential.go`) -- credential store integration via go-keyring (Windows Credential Manager / KWallet / macOS Keychain). HandleValidate is invoked from the validate command in the `::` core palette.
-- **`sync.go`** (root package) -- API-backed menu sync. JWT minting, API fetching (`/api/menu`), YAML serialization to `menu-cache.yaml`. `SyncMenu` fetches and caches the menu (returns item count, version, error). `SaveMenu` PUTs the menu tree with conflict detection via `baseVersion` (409 on stale). Both persist the version number to `.menu-version` for next launch.
+- **`sync.go`** (root package) -- API-backed tree sync. Generic `FetchTree(token, ns, name)` / `SaveTree(token, ns, name, tree, baseVersion)` against `/fzt/tree/:ns/:name`. `SyncMenu` / `SaveMenu` are thin wrappers that call the generics with `(claims.Sub, "menu")` — kept for call-site compatibility. YAML serialization to `menu-cache.yaml`. Version number persisted to `.menu-version` for next launch.
 
 ### `tui/` -- Terminal renderer
 
@@ -91,7 +91,7 @@ The command tree may contain multiple items named "on" and "off" (e.g. under `wh
 
 ### Startup flow (terminal -- `tui.Run`)
 
-1. Items loaded from `menu-cache.yaml` (synced from `/api/menu` endpoint) instead of static root.yaml
+1. Items loaded from `menu-cache.yaml` (synced from `/fzt/tree/<sub>/menu` endpoint) instead of static root.yaml
 2. `tui.Run(items, cfg)` -- creates tcell screen, delegates to `runWithSession` if TreeMode
 3. `core.NewState(items, cfg)` -- creates root context with AllItems
 4. `applyFrontendConfig(s, cfg)` -- copies FrontendName/Version/Commands to State
@@ -147,16 +147,7 @@ GitHub Actions workflow (`.github/workflows/build.yml`) on push to main is a tag
 1. **Tag**: auto-increment patch version and create a GitHub release (no asset uploads — this is just so Go consumers can `go get` at a specific version).
 2. **Dispatch**: notify the three Go-module consumers (`fzt-picker`, `fzt-automate`, `fzt-browser`) via `repository_dispatch` so their own dispatch workflows can bump `fzt-terminal` in their go.mod. Uses GitHub App token from Azure Key Vault.
 
-The `packages/routes/` Node.js package has its own `publish-routes.yml` workflow (unchanged).
-
-## `packages/routes/` — AT menu routes
-
-Exports `createATRoutes({ requireAuth, container, bookmarksContainer })`:
-
-- `container` — Cosmos `HomepageDB.userdata` for menu tree docs (type='menu', append-only versioned, partition `/userId`).
-- `bookmarksContainer` — Cosmos `HomepageDB.fzt-frontend-data` for homepage bookmarks. Optional; only needed for ref resolution.
-
-Menu docs can contain `{ ref: "bookmarks" }` nodes. On GET, the ref resolver inlines the caller's `type='bookmarks'` doc from `bookmarksContainer`, and recursively resolves any `{ ref: "<name>" }` nodes inside against `type='bookmarks-shared'` docs. Resolved nodes carry `_ref`/`_refVersion` metadata so PUT strips them back to pointer form before storage. Edits under the bookmarks subtree are read-only from automate's side — they don't write through to the bookmarks doc.
+Menu CRUD used to live in `packages/routes/` here (`@nelsong6/fzt-terminal-routes`, mounted at `/at`). Retired 2026-04-18 — all tree CRUD now runs through `@nelsong6/fzt-frontend-routes` at `/fzt/tree/:ns/:name`. The package directory and its publish workflow were deleted.
 
 ## Key patterns
 

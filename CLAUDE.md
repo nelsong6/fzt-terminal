@@ -34,7 +34,6 @@ Shared frontend behavior imported by every fzt app:
 - **`InjectCommandFolder`** -- appends the hidden `:` command folder to the item tree. Single-level (`:` -> core commands) when no frontend is registered; two-level (`:` -> frontend commands + `::` -> core commands) when `FrontendName` is set. Skips injection if palette already exists in loaded cache (data-driven mode).
 - **`HandleCommandAction`** -- routes leaf selections in the command tree by `Item.Action.Target` (stable command identifier) with fallback to `Fields[0]`. Handles version toggle, validate, updatetimer, sync, edit modes (add-after, add-folder, rename, delete, inspect, save), and internalized shell commands (load-*, unload). Frontend commands matched by name or action string.
 - **`EngineVersion`** -- module-level var injected via ldflags from the build script (reads fzt engine version from go.mod or git describe for local replace).
-- **`IsInCommandScope` / `ScopeCtlTitle`** -- scope awareness for renderers (show "fzt ctl" vs "<frontend> ctl" in the title bar).
 - **`ApplyConfig`** -- sets frontend identity (name, version, commands) from Config onto State before command injection.
 - **EnvTags / DisplayCondition** -- environment-based command filtering. `Config.EnvTags` declares the runtime capabilities (e.g. `["terminal"]` for automate, `["wasm", "browser"]` for the WASM bridge). During command tree construction (`buildCoreLevelCommandTree` / `buildTwoLevelCommandTree`), items with a non-empty `DisplayCondition` are skipped unless the condition string is present in `EnvTags`. Example: the `update` command has `DisplayCondition: "terminal"` so it only appears in the terminal palette, never in the browser. Tags are defined in `core.Config`, propagated to `core.State.EnvTags`, and checked via `hasEnvTag()`. The engine's `core.Item.DisplayCondition` field and `core.State.EnvTags` field are the underlying storage.
 - **`HandleValidate` / `ReadJWTSecret`** (`credential.go`) -- credential store integration via go-keyring (Windows Credential Manager / KWallet / macOS Keychain). HandleValidate is invoked from the validate command in the `::` core palette.
@@ -74,7 +73,7 @@ The `:` item is a hidden folder injected into every fzt app's item tree.
 - **No frontend registered** (`FrontendName == ""`): `:` -> core commands (version toggle, validate, updatetimer, sync, update).
 - **Frontend registered**: `:` -> frontend commands + `::` subfolder -> core commands. The frontend registers commands via `State.FrontendCommands` or WASM `fzt.addCommands()`.
 
-The prompt shows scope breadcrumbs when inside command folders. `ScopeCtlTitle` returns "fzt ctl" at `::` depth or "<frontend> ctl" at `:` depth.
+The prompt shows scope breadcrumbs when inside command folders.
 
 ### Disambiguation of on/off leaves
 

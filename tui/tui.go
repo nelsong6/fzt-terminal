@@ -249,12 +249,17 @@ func cleanupInspect(s *core.State) {
 }
 
 // ProcessAction intercepts "select:..." actions to handle command palette routing.
-// When the selection occurred inside a `:` scope (IsInCommandScope), it looks up
-// the actual tree item (not the AcceptNth-truncated string) and routes through
-// HandleCommandAction. HandleCommandAction returns "" for internally-handled actions
-// (version/whoami/updatetimer/validate/etc.) or an action string for the caller
-// (frontend commands). After internal handling, search state is cleared to prevent
-// stale highlight artifacts.
+// When the selected item is from the injected `:` palette (Item.Injected == true),
+// it looks up the actual tree item (not the AcceptNth-truncated string) and routes
+// through HandleCommandAction. HandleCommandAction returns "" for internally-handled
+// actions (version/whoami/updatetimer/validate/etc.) or an action string for the
+// caller (frontend commands). After internal handling, search state is cleared to
+// prevent stale highlight artifacts.
+//
+// Dispatch keys on the item's identity, not the user's scope stack — fuzzy-matching
+// a palette item from root routes through the palette handler too, not the raw
+// "select:<name>" path that would leak "?" to the shell (where PowerShell's ? alias
+// for Where-Object would trip it).
 //
 // Exported so the fzt-browser WASM bridge can call it after session.HandleKey —
 // the bridge bypasses fzt-terminal's tcell event loop (which used to be the only
@@ -266,10 +271,16 @@ func ProcessAction(s *core.State, action string) string {
 
 func processAction(s *core.State, action string) string {
 	if len(action) > 7 && action[:7] == "select:" {
-		if frontend.IsInCommandScope(s) {
-			// Look up the actual item from the tree — the formatted string
-			// may have been truncated by AcceptNth, losing metadata fields.
-			item := findSelectedItem(s)
+		// Look up the actual item from the tree — the formatted string
+		// may have been truncated by AcceptNth, losing metadata fields.
+		item := findSelectedItem(s)
+		// Route through the palette handler whenever the selected item is
+		// from the injected `:` palette, regardless of whether the user's
+		// scope stack is inside `:`. Fuzzy-matching a palette item from
+		// root lands here too — otherwise the raw "select:<name>" leaks
+		// to the shell and trips things like PowerShell's `?` alias for
+		// Where-Object. Every palette item carries Injected=true.
+		if item.Injected {
 			cmdAction := frontend.HandleCommandAction(s, item)
 			if cmdAction == "" {
 				// Handled internally — clear search state so top match

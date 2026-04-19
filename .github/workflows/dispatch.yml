@@ -1,8 +1,10 @@
 name: Dependency Update
 
+# Auto-trigger disabled — Claude-driven CI. `repository_dispatch` from
+# upstream fzt releases is ignored. Run manually via
+# `gh workflow run dispatch.yml -R nelsong6/fzt-terminal`.
 on:
-  repository_dispatch:
-    types: [fzt-updated]
+  workflow_dispatch:
 
 permissions:
   contents: write

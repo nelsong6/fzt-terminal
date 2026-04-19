@@ -279,12 +279,22 @@ func cleanupInspect(s *core.State) {
 	s.InspectItemIdxs = nil
 }
 
-// processAction intercepts "select:..." actions to handle command palette routing.
+// ProcessAction intercepts "select:..." actions to handle command palette routing.
 // When the selection occurred inside a `:` scope (IsInCommandScope), it looks up
 // the actual tree item (not the AcceptNth-truncated string) and routes through
 // HandleCommandAction. HandleCommandAction returns "" for internally-handled actions
-// (version/identity toggle) or an action string for the caller (frontend commands).
-// After internal handling, search state is cleared to prevent stale highlight artifacts.
+// (version/whoami/updatetimer/validate/etc.) or an action string for the caller
+// (frontend commands). After internal handling, search state is cleared to prevent
+// stale highlight artifacts.
+//
+// Exported so the fzt-browser WASM bridge can call it after session.HandleKey —
+// the bridge bypasses fzt-terminal's tcell event loop (which used to be the only
+// caller) and would otherwise return raw "select:..." actions to JavaScript,
+// silently dropping internally-handled palette selections like :whoami.
+func ProcessAction(s *core.State, action string) string {
+	return processAction(s, action)
+}
+
 func processAction(s *core.State, action string) string {
 	if len(action) > 7 && action[:7] == "select:" {
 		if frontend.IsInCommandScope(s) {

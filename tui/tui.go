@@ -470,6 +470,15 @@ func applyFrontendConfig(s *core.State, cfg Config) {
 	if len(cfg.EnvTags) > 0 {
 		s.EnvTags = cfg.EnvTags
 	}
+	if cfg.UpdateRepo != "" {
+		s.UpdateRepo = cfg.UpdateRepo
+	}
+	if cfg.UpdateAssetPrefix != "" {
+		s.UpdateAssetPrefix = cfg.UpdateAssetPrefix
+	}
+	if cfg.UpdateBinaryName != "" {
+		s.UpdateBinaryName = cfg.UpdateBinaryName
+	}
 }
 
 // runWithSession renders directly to a tcell screen, supporting tree mode + search switching.

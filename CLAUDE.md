@@ -38,7 +38,7 @@ Shared frontend behavior imported by every fzt app:
 - **`ApplyConfig`** -- sets frontend identity (name, version, commands) from Config onto State before command injection.
 - **EnvTags / DisplayCondition** -- environment-based command filtering. `Config.EnvTags` declares the runtime capabilities (e.g. `["terminal"]` for automate, `["wasm", "browser"]` for the WASM bridge). During command tree construction (`buildCoreLevelCommandTree` / `buildTwoLevelCommandTree`), items with a non-empty `DisplayCondition` are skipped unless the condition string is present in `EnvTags`. Example: the `update` command has `DisplayCondition: "terminal"` so it only appears in the terminal palette, never in the browser. Tags are defined in `core.Config`, propagated to `core.State.EnvTags`, and checked via `hasEnvTag()`. The engine's `core.Item.DisplayCondition` field and `core.State.EnvTags` field are the underlying storage.
 - **`HandleValidate` / `ReadJWTSecret`** (`credential.go`) -- credential store integration via go-keyring (Windows Credential Manager / KWallet / macOS Keychain). HandleValidate is invoked from the validate command in the `::` core palette.
-- **`sync.go`** (root package) -- API-backed tree sync. Generic `FetchTree(token, ns, name)` / `SaveTree(token, ns, name, tree, baseVersion)` against `/fzt/tree/:ns/:name`. `SyncMenu` / `SaveMenu` are thin wrappers that call the generics with `(claims.Sub, "menu")` — kept for call-site compatibility. YAML serialization to `menu-cache.yaml`. Version number persisted to `.menu-version` for next launch.
+- **`sync.go`** (root package) -- API-backed tree sync. Generic `FetchTree(token, treeID)` / `SaveTree(token, treeID, tree, baseVersion)` against `/fzt/tree/:id`. `SyncMenu` / `SaveMenu` are thin wrappers that call the generics with `MenuTreeID(claims.Sub)` (→ `"<sub>-menu"`). YAML serialization to `menu-cache.yaml`. Version number persisted to `.menu-version` for next launch.
 
 ### `tui/` -- Terminal renderer
 
@@ -91,7 +91,7 @@ The command tree may contain multiple items named "on" and "off" (e.g. under `wh
 
 ### Startup flow (terminal -- `tui.Run`)
 
-1. Items loaded from `menu-cache.yaml` (synced from `/fzt/tree/<sub>/menu` endpoint) instead of static root.yaml
+1. Items loaded from `menu-cache.yaml` (synced from `/fzt/tree/<sub>-menu` endpoint) instead of static root.yaml
 2. `tui.Run(items, cfg)` -- creates tcell screen, delegates to `runWithSession` if TreeMode
 3. `core.NewState(items, cfg)` -- creates root context with AllItems
 4. `applyFrontendConfig(s, cfg)` -- copies FrontendName/Version/Commands to State
@@ -147,7 +147,7 @@ GitHub Actions workflow (`.github/workflows/build.yml`) on push to main is a tag
 1. **Tag**: auto-increment patch version and create a GitHub release (no asset uploads — this is just so Go consumers can `go get` at a specific version).
 2. **Dispatch**: notify the three Go-module consumers (`fzt-picker`, `fzt-automate`, `fzt-browser`) via `repository_dispatch` so their own dispatch workflows can bump `fzt-terminal` in their go.mod. Uses GitHub App token from Azure Key Vault.
 
-Menu CRUD used to live in `packages/routes/` here (`@nelsong6/fzt-terminal-routes`, mounted at `/at`). Retired 2026-04-18 — all tree CRUD now runs through `@nelsong6/fzt-frontend-routes` at `/fzt/tree/:ns/:name`. The package directory and its publish workflow were deleted.
+Menu CRUD used to live in `packages/routes/` here (`@nelsong6/fzt-terminal-routes`, mounted at `/at`). Retired 2026-04-18 — all tree CRUD now runs through `@nelsong6/fzt-frontend-routes` at `/fzt/tree/:id` (flat ids like `nelson-menu`). The package directory and its publish workflow were deleted.
 
 ## Key patterns
 

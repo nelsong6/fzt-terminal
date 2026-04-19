@@ -1174,9 +1174,10 @@ func drawBorderTop(c render.Canvas, w, y int) {
 
 // drawBorderTopWithTitle renders the top border with an optional centered
 // title. titleStyleHint: 0=default cyan, 1=success green, 2=error red,
-// 3=neutral slate ("registered but no action"). pulse=true adds reverse
-// video to the title cells for ~350ms after each SetTitle so repeat
-// identical messages still produce visible feedback.
+// 3=neutral slate ("registered but no action"), 4=nav-mode (matches the
+// prompt's NavModeFg), 5=search-mode (matches the prompt's SearchModeFg).
+// pulse=true adds reverse video to the title cells for ~350ms after each
+// SetTitle so repeat identical messages still produce visible feedback.
 func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, titleStyleHint int, pulse bool, syncIcon string, label ...string) {
 	borderStyle := tcell.StyleDefault.Foreground(BorderFg)
 	c.SetContent(0, y, '\u250c', nil, borderStyle)
@@ -1214,6 +1215,10 @@ func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, titleS
 			titleFg = TitleErrorFg
 		case 3:
 			titleFg = TitleNeutralFg
+		case 4:
+			titleFg = NavModeFg
+		case 5:
+			titleFg = SearchModeFg
 		}
 		tStyle := tcell.StyleDefault.Foreground(titleFg).Bold(true)
 		if pulse {

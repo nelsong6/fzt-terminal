@@ -865,7 +865,7 @@ func drawReverse(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 
 	borderOffset := 0
 	if cfg.Border {
-		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, s.VersionDisplay, 0, false, "", cfg.Label)
+		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, 0, false, "", cfg.Label)
 		y++
 		borderOffset = 1
 	}
@@ -976,7 +976,7 @@ func drawDefault(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 
 	borderOffset := 0
 	if cfg.Border {
-		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, s.VersionDisplay, 0, false, "", cfg.Label)
+		drawBorderTopWithTitle(c, w, y, cfg.Title, cfg.TitlePos, 0, false, "", cfg.Label)
 		y++
 		borderOffset = 1
 	}
@@ -1185,7 +1185,7 @@ func drawText(c render.Canvas, x, y int, text string, style tcell.Style, maxW in
 }
 
 func drawBorderTop(c render.Canvas, w, y int) {
-	drawBorderTopWithTitle(c, w, y, "", "", "", 0, false, "")
+	drawBorderTopWithTitle(c, w, y, "", "", 0, false, "")
 }
 
 // drawBorderTopWithTitle renders the top border with an optional centered
@@ -1193,7 +1193,7 @@ func drawBorderTop(c render.Canvas, w, y int) {
 // 3=neutral slate ("registered but no action"). pulse=true adds reverse
 // video to the title cells for ~350ms after each SetTitle so repeat
 // identical messages still produce visible feedback.
-func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, version string, titleStyleHint int, pulse bool, syncIcon string, label ...string) {
+func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, titleStyleHint int, pulse bool, syncIcon string, label ...string) {
 	borderStyle := tcell.StyleDefault.Foreground(BorderFg)
 	c.SetContent(0, y, '\u250c', nil, borderStyle)
 	for x := 1; x < w-1; x++ {
@@ -1242,21 +1242,7 @@ func drawBorderTopWithTitle(c render.Canvas, w, y int, title, pos string, versio
 		c.SetContent(startX+1+len(titleRunes), y, ' ', nil, borderStyle)
 	}
 
-	// Version pinned to top-right of border (only when enabled)
-	if version != "" && version != "UNSET" {
-		vRunes := []rune(version)
-		vStart := w - len(vRunes) - 3 // 1 corner + 1 - + space pad
-		if vStart > 2 {
-			vStyle := tcell.StyleDefault.Foreground(VersionFg)
-			c.SetContent(vStart, y, ' ', nil, borderStyle)
-			for i, r := range vRunes {
-				c.SetContent(vStart+1+i, y, r, nil, vStyle)
-			}
-			c.SetContent(vStart+1+len(vRunes), y, ' ', nil, borderStyle)
-		}
-	}
-
-	// Sync icon pinned to top-right of border (takes priority over version)
+	// Sync icon pinned to top-right of border
 	if syncIcon != "" {
 		iRunes := []rune(syncIcon)
 		iStart := w - len(iRunes) - 3

@@ -24,7 +24,6 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	y := startY
 
 	if cfg.Border {
-		versionStr := s.VersionDisplay
 		title := cfg.Title
 		titleStyle := 0
 		// StatesBannerOn overrides everything — the inspector is the user's
@@ -50,7 +49,7 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 		if s.Dirty {
 			icon = "\u25cf" // ●
 		}
-		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, versionStr, titleStyle, s.IsPulsing(), icon, cfg.Label)
+		drawBorderTopWithTitle(c, w, y, title, cfg.TitlePos, titleStyle, s.IsPulsing(), icon, cfg.Label)
 		y++
 		borderOffset = 1
 	}

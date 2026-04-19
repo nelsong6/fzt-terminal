@@ -584,7 +584,7 @@ type simKey struct {
 
 // parseSimQuery parses a sim-query string into key events.
 // Supports {up}, {down}, {left}, {right}, {enter}, {shift+enter}, {tab}, {esc},
-// {bs}, {space}, {ctrl+u}, {ctrl+w}. Plain characters are literal key presses.
+// {bs}, {space}, {home}, {end}. Plain characters are literal key presses.
 func parseSimQuery(query string) []simKey {
 	var keys []simKey
 	runes := []rune(query)
@@ -621,10 +621,10 @@ func parseSimQuery(query string) []simKey {
 					sk = simKey{key: tcell.KeyBackspace2, label: "Backspace"}
 				case "space":
 					sk = simKey{key: tcell.KeyRune, ch: ' ', label: "Space"}
-				case "ctrl+u":
-					sk = simKey{key: tcell.KeyCtrlU, label: "Ctrl+U"}
-				case "ctrl+w":
-					sk = simKey{key: tcell.KeyCtrlW, label: "Ctrl+W"}
+				case "home":
+					sk = simKey{key: tcell.KeyHome, label: "Home"}
+				case "end":
+					sk = simKey{key: tcell.KeyEnd, label: "End"}
 				default:
 					// Unknown -- skip
 					i = end

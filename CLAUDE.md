@@ -109,7 +109,7 @@ The pending* variables buffer config because InjectCommandFolder runs during ini
 All key/click handlers return an action string:
 
 - `""` -- handled internally (version toggle, validate, updatetimer, sync, scope change)
-- `"cancel"` -- user quit (Ctrl+C, Escape from root)
+- `"cancel"` -- user quit (Escape from root)
 - `"select:<output>"` -- leaf selected. Output is the formatted item fields per AcceptNth.
 - `"update"` -- user selected the fzt self-update command
 - `"loaded"` -- load-* command completed (auto-syncs and exits)
@@ -156,9 +156,17 @@ Single-letter palette commands (sync, save, add, etc.) live in the `:` folder â€
 
 Currently unsupported in any fzt text-input context. Shift is Shift for symbols, but capitals for rename/property-edit mode don't have a clean mechanism yet (CapsLock works as an OS-level workaround). A future chord or sticky-caps mode is tracked by [my-homepage#23](https://github.com/nelsong6/my-homepage/issues/23).
 
-### Legacy Ctrl bindings
+### Replacements for retired Ctrl bindings
 
-Several Ctrl bindings still exist in `fzt/core/input.go` (Ctrl+C cancel, Ctrl+P/N nav, Ctrl+A/E line nav, Ctrl+U clear query, Ctrl+W delete word) and `fzt-picker/frontend/cgo/picker.go` (Ctrl+C/U/W). These predate the current model and are **scheduled for removal** by [my-homepage#24](https://github.com/nelsong6/my-homepage/issues/24). New code MUST NOT introduce any Ctrl binding. Escape replaces Ctrl+C; arrow keys replace Ctrl+P/N; Home/End replace Ctrl+A/E; Backspace/`/` replaces Ctrl+U; no replacement for Ctrl+W is planned.
+All Ctrl bindings have been removed from the engine and the picker (my-homepage#24). Replacements:
+
+- Escape cancels (was Ctrl+C)
+- Arrow keys navigate (was Ctrl+P/N)
+- Home / End move cursor within the query (was Ctrl+A/E)
+- Escape clears the query (was Ctrl+U)
+- No direct replacement for "delete word" (was Ctrl+W) â€” backspace repeatedly, or Escape-to-clear + retype
+
+New code MUST NOT introduce any Ctrl, Alt, or Meta binding.
 
 ## Dependencies
 

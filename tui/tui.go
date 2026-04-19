@@ -354,33 +354,15 @@ func renderFrameDrawFunc(c render.Canvas, s *core.State, cfg core.Config) {
 
 func renderFrame(c render.Canvas, s *core.State, cfg Config) {
 	w, h := c.Size()
-
-	usableH := h
-	if cfg.Height > 0 && cfg.Height < 100 {
-		usableH = h * cfg.Height / 100
-		if usableH < 3 {
-			usableH = 3
-		}
-	}
-
-	startY := 0
-	if cfg.Height > 0 && cfg.Height < 100 {
-		startY = h - usableH
-	}
-
 	if cfg.Layout == "reverse" {
-		drawReverse(c, s, cfg, w, startY, usableH)
+		drawReverse(c, s, cfg, w, 0, h)
 	} else {
-		drawDefault(c, s, cfg, w, startY, usableH)
+		drawDefault(c, s, cfg, w, 0, h)
 	}
 }
 
 // Run launches the interactive TUI. Returns the selected item's output string, or "" if cancelled.
 func Run(items []core.Item, cfg Config) (string, error) {
-	if cfg.Height > 0 && cfg.Height < 100 {
-		return RunInline(items, cfg)
-	}
-
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return "", fmt.Errorf("creating screen: %w", err)

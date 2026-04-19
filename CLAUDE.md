@@ -1,6 +1,6 @@
 # fzt-terminal
 
-Terminal renderer for fzt. Provides the tcell-based TUI (full-screen + inline) that's consumed as a Go library by `fzt-automate`, `fzt-picker`, and `fzt-browser`'s headless session. Imports the fzt engine (`github.com/nelsong6/fzt`) for state and scoring, and `github.com/nelsong6/fzt-frontend` for the command palette and shared interaction behavior.
+Terminal renderer for fzt. Provides the tcell-based full-screen TUI that's consumed as a Go library by `fzt-automate`, `fzt-picker`, and `fzt-browser`'s headless session. Imports the fzt engine (`github.com/nelsong6/fzt`) for state and scoring, and `github.com/nelsong6/fzt-frontend` for the command palette and shared interaction behavior.
 
 The other half of the old fzt-terminal — the browser renderer and the WASM bridge — now lives at `github.com/nelsong6/fzt-browser`. The shell-automation CLI lives at `github.com/nelsong6/fzt-automate`. The command palette + credential + API sync live at `github.com/nelsong6/fzt-frontend`. See the 2026-04-16 split history at the bottom.
 
@@ -42,20 +42,15 @@ Shared frontend behavior imported by every fzt app:
 
 ### `tui/` -- Terminal renderer
 
-Full-screen and inline TUI rendering via tcell. Key files:
+Full-screen TUI rendering via tcell. Key files:
 
 | File | Purpose |
 |------|---------|
-| `tui.go` | Entry points: `Run` (full-screen), `RunInline` (inline), `NewSession`/`NewTreeSession` (headless), `Simulate` (testing). Layout functions: `drawDefault`, `drawReverse`, `drawUnified` (tree mode). `drawBorderTopWithTitle` renders the title bar with titleStyleHint (0=default, 1=green, 2=red) and syncIcon parameters. |
+| `tui.go` | Entry points: `Run` (full-screen), `NewSession`/`NewTreeSession` (headless), `Simulate` (testing). Layout functions: `drawDefault`, `drawReverse`, `drawUnified` (tree mode). `drawBorderTopWithTitle` renders the title bar with titleStyleHint (0=default cyan, 1=green success, 2=red error, 3=neutral slate, 4=nav-mode NavModeFg, 5=search-mode SearchModeFg) and syncIcon parameters. |
 | `tree.go` | Unified tree renderer: `drawUnified` draws prompt bar + tree as a single navigation surface. `drawTreeRow` renders individual rows with icons, indentation, match highlighting. Headers start at borderOffset+5 to match tree row layout (2 selection + 2 icon + 1 buffer). Dynamic effectiveNameCol computed from visible items. |
 | `sync.go` | Background sync check: `initSyncCheck`, `checkBookmarkStaleness`. 1-second ticker goroutine posts `tcell.EventInterrupt` for live redraws. 20-minute sync interval with `.last-sync-check` file. SyncIcon rendering (yellow icon in top-right corner). |
-| `style.go` | Semantic color constants (Catppuccin Mocha palette mapped to tcell colors). CSS equivalents documented in comments. Exports `PaletteRGB` (tcell color → RGB map), `ColorToRGB()` (any tcell color to RGB), `BaseBgRGB`/`TextFgRGB` (default bg/fg), `DefaultFontName`/`DefaultFontSize` (shared font config). Used by GDI renderers (picker) to stay aligned with the terminal palette. |
+| `style.go` | Semantic color constants (Catppuccin Mocha palette mapped to tcell colors). CSS equivalents documented in comments. Exports `PaletteRGB` (tcell color → RGB map), `ColorToRGB()` (any tcell color to RGB), `BaseBgRGB`/`TextFgRGB` (default bg/fg), `DefaultFontName`/`DefaultFontSize` (shared font config), `NavModeFg`/`SearchModeFg` (mode-indicator colors). Used by GDI renderers (picker) to stay aligned with the terminal palette. |
 | `canvas.go` | `tcellCanvas` wraps `tcell.Screen` to satisfy `render.Canvas`. |
-| `inline.go` | `RunInline` -- renders TUI inline in the terminal buffer (no alternate screen) using raw ANSI escape sequences + `MemScreen`. Used when `--height` is specified. |
-| `keyparse.go` | Raw byte -> tcell key parser for inline mode. Handles CSI/SS3 escape sequences, UTF-8, control characters. |
-| `rawreader.go` | `rawTerminal` abstraction for raw TTY I/O. |
-| `rawreader_unix.go` | Unix: opens `/dev/tty`, `term.MakeRaw`. |
-| `rawreader_windows.go` | Windows: opens `CONIN$/CONOUT$`, enables VT processing + VT input. |
 | `commands.go` | Currently empty (placeholder). |
 
 ### Browser rendering — moved
@@ -190,7 +185,6 @@ Menu CRUD used to live in `packages/routes/` here (`@nelsong6/fzt-terminal-route
 
 - **Headless sessions**: `tui.NewSession` / `tui.NewTreeSession` create sessions that render to `MemScreen` without a real terminal. Used by WASM bridge and `Simulate`.
 - **Dual render paths**: ANSI-based (terminal + `fzt-terminal.js`) and structured data (DOM renderer via `getVisibleRows` etc.).
-- **Platform abstraction**: `rawreader_unix.go` / `rawreader_windows.go` handle TTY differences for inline mode.
 - **Type aliases**: `tui.Config`, `tui.Session`, `tui.SessionFrame` alias engine types so callers compile after refactors.
 - **Title bar as status area**: `State.SetTitle` / `ClearTitle` manage the title bar as a dynamic status area. TitleOverride always takes priority over ambient displays (timer, sync status). `drawBorderTopWithTitle` accepts titleStyleHint and syncIcon parameters.
 - **Background sync**: Ticker goroutine in tui/sync.go posts `tcell.EventInterrupt` for live redraws without blocking the event loop.

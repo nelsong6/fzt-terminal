@@ -157,21 +157,22 @@ Legend: ✓ = handled, ▸ = has side effect, — = unbound / silent, ↩ = tran
 | Backspace | ✓ delete last query char; on empty query, pop scope | ↩ chop last query char + return to search | ✓ delete last char of buffer |
 | Shift+Backspace | ▸ reset navigation to home (pop all scope) | ▸ same | ▸ same; preserves edit mode |
 | Home / End | ✓ move query cursor to start / end | — | — |
-| Escape | ▸ unwind cascade (see below) | ▸ unwind cascade | ↩ cancel edit, return to prior mode |
+| Escape | ↩ first press: exit to normal mode, query preserved; further presses unwind (see below) | ▸ unwind cascade | ↩ cancel edit, return to prior mode |
 
 ### Back-out / unwind cascade
 
 Escape performs progressive unwind. Each press steps back one layer; reaching root exits the picker.
 
 1. **Edit / inspect mode active** → cancel the edit, clear `EditMode`, clean up any property rows, return to the prior mode (search or normal).
-2. **Non-empty query** → clear the query; stay in search mode.
-3. **Scope depth > 1** → pop one scope level.
-4. **Context stack > 1** (e.g. scoped into `:` palette as a pushed context) → pop one context.
-5. **At root with empty query, nothing to unwind** → `s.Cancelled = true`, picker returns "cancel".
+2. **Search mode with non-empty query** → transition to normal mode, query preserved (Vim insert→normal analog). Second Escape continues the cascade.
+3. **Non-empty query (normal mode)** → clear the query.
+4. **Scope depth > 1** → pop one scope level.
+5. **Context stack > 1** (e.g. scoped into `:` palette as a pushed context) → pop one context.
+6. **At root with empty query, nothing to unwind** → `s.Cancelled = true`, picker returns "cancel".
 
-Shift+Backspace collapses steps 2–4 into a single gesture — resets to home (pop all scope, clear query, clear filtered). Preserves the active edit mode when one is set, so the user doesn't lose an in-progress add/rename while re-orienting.
+Shift+Backspace collapses the query-clear and scope-pop steps into a single gesture — resets to home (pop all scope, clear query, clear filtered). Preserves the active edit mode when one is set, so the user doesn't lose an in-progress add/rename while re-orienting.
 
-Backspace on an empty query at scope > 1 does step 3 (pop scope) without needing Escape. Backspace on an empty query at root with context stack > 1 pops a context.
+Backspace on an empty query at scope > 1 does step 4 (pop scope) without needing Escape. Backspace on an empty query at root with context stack > 1 pops a context.
 
 ### Modifier policy
 

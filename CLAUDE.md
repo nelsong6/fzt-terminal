@@ -219,10 +219,12 @@ Nothing to build here — this repo is a Go library plus a Node.js route package
 
 ## CI
 
-GitHub Actions workflow (`.github/workflows/build.yml`) on push to main is a tag-and-dispatch job:
+Two manually-triggered workflows (Claude-driven):
 
-1. **Tag**: auto-increment patch version and create a GitHub release (no asset uploads — this is just so Go consumers can `go get` at a specific version).
-2. **Dispatch**: notify the three Go-module consumers (`fzt-picker`, `fzt-automate`, `fzt-browser`) via `repository_dispatch` so their own dispatch workflows can bump `fzt-terminal` in their go.mod. Uses GitHub App token from Azure Key Vault.
+- **`.github/workflows/dispatch.yml`** (`workflow_dispatch`) — dependency bump path. Calls `go-dependency-update-template` to bump `github.com/nelsong6/fzt` + `github.com/nelsong6/fzt-frontend`, commit, push, and cut a release at the new sha.
+- **`.github/workflows/release.yml`** (`workflow_dispatch`) — direct-push release path for code changes. Calls `release-and-dispatch-template` to tag the current main. Shared `release-tag` concurrency group with `dispatch.yml`.
+
+Both just cut a Go-module release (no asset uploads — consumers `go get` at the tag). Downstream Go-module consumers (`fzt-picker`, `fzt-automate`, `fzt-browser`) are updated manually per repo — no `repository_dispatch` fan-out.
 
 Menu CRUD used to live in `packages/routes/` here (`@nelsong6/fzt-terminal-routes`, mounted at `/at`). Retired 2026-04-18 — all tree CRUD now runs through `@nelsong6/fzt-frontend-routes` at `/fzt/tree/:id` (flat ids like `nelson-menu`). The package directory and its publish workflow were deleted.
 

@@ -1,7 +1,8 @@
 name: Release
 
 # Auto-trigger disabled — Claude-driven CI. Run manually via
-# `gh workflow run release.yml -R nelsong6/fzt-terminal`.
+# `gh workflow run release.yml -R nelsong6/fzt-terminal`. Downstream
+# consumers are updated manually per repo.
 
 on:
   workflow_dispatch:
@@ -18,6 +19,3 @@ permissions:
 jobs:
   release:
     uses: nelsong6/pipeline-templates/.github/workflows/release-and-dispatch-template.yml@main
-    with:
-      dispatch-repos: fzt-picker,fzt-automate,fzt-browser
-      dispatch-event: fzt-updated

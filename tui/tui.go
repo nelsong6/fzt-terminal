@@ -431,6 +431,7 @@ func applyFrontendConfig(s *core.State, cfg Config) {
 	if len(cfg.FrontendCommands) > 0 {
 		s.FrontendCommands = cfg.FrontendCommands
 	}
+	s.HidePalette = cfg.HidePalette
 	if cfg.Provider != nil {
 		s.Provider = cfg.Provider
 	}

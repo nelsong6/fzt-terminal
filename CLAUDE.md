@@ -195,8 +195,8 @@ All Ctrl bindings have been removed from the engine and the picker. Replacements
 | Ctrl+C (cancel) | Escape from root |
 | Ctrl+P / Ctrl+N (nav) | Arrow keys, or lowercase `k` / `j` in normal mode |
 | Ctrl+A / Ctrl+E (line nav) | Home / End |
-| Ctrl+U (clear query) | Escape on non-empty query |
-| Ctrl+W (delete word) | Backspace repeatedly, or Escape to clear and retype |
+| Ctrl+U (clear query) | Escape twice on non-empty query (first press exits to normal mode, second clears), or Shift+Backspace |
+| Ctrl+W (delete word) | Backspace repeatedly, or Escape-Escape / Shift+Backspace to clear and retype |
 
 ### Shortcut manifest
 
@@ -239,6 +239,10 @@ Menu CRUD used to live in `packages/routes/` here (`@nelsong6/fzt-terminal-route
 - **Internalized shell commands**: load-*, unload, sync handled internally in HandleCommandAction -- no PowerShell function dependencies. load auto-syncs and exits; unload clears cache and exits.
 
 ## Change log
+
+### 2026-04-20
+
+1. **Escape in search exits to normal mode before clearing query** -- First Escape from search with a non-empty query now flips to normal mode with the query preserved (Vim insert→normal analog); second Escape resumes the old cascade and clears the query. Motivation: user reported the prior "clear query in one shot" behavior fought Vim muscle memory — Escape should leave the free-typing mode without wiping what was typed. Engine change in [nelsong6/fzt#12](https://github.com/nelsong6/fzt/issues/12) (fzt v0.2.70); docs here rebased cascade step numbering (6 steps now, with a new step 2 for the normal-mode transition), updated the Escape row in the key table, and corrected the two retired-Ctrl replacement rows (Ctrl+U, Ctrl+W) to reflect that clearing the query now takes two presses (or Shift+Backspace). Shift+Backspace behavior unchanged — still resets to home in one gesture.
 
 ### 2026-04-15
 

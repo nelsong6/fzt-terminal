@@ -31,7 +31,7 @@ Shared frontend behavior lives in `github.com/nelsong6/fzt-frontend`:
 
 Shared frontend behavior imported by every fzt app:
 
-- **`InjectCommandFolder`** -- appends the hidden `:` command folder to the item tree. Single-level (`:` -> core commands) when no frontend is registered; two-level (`:` -> frontend commands + `::` -> core commands) when `FrontendName` is set. Skips injection if palette already exists in loaded cache (data-driven mode).
+- **`InjectCommandFolder`** -- appends the `:` command folder to the item tree. Single-level (`:` -> core commands) when no frontend is registered; two-level (`:` -> frontend commands + `::` -> core commands) when `FrontendName` is set. The `:` root is visible at root since 2026-04-19 (discoverability over stealth; was previously `Hidden: true`). Skips injection entirely if `Config.HidePalette` is set (e.g. unauthenticated homepage visitors) or if a `:` palette already exists in the loaded cache (data-driven mode).
 - **`HandleCommandAction`** -- routes leaf selections in the command tree by `Item.Action.Target` (stable command identifier) with fallback to `Fields[0]`. Handles version toggle, validate, updatetimer, sync, edit modes (add-after, add-folder, rename, delete, inspect, save), and internalized shell commands (load-*, unload). Frontend commands matched by name or action string.
 - **`EngineVersion`** -- module-level var injected via ldflags from the build script (reads fzt engine version from go.mod or git describe for local replace).
 - **`ApplyConfig`** -- sets frontend identity (name, version, commands) from Config onto State before command injection.
@@ -88,8 +88,8 @@ The command tree may contain multiple items named "on" and "off" (e.g. under `wh
 1. Items loaded from `menu-cache.yaml` (synced from `/fzt/tree/<sub>-menu` endpoint) instead of static root.yaml
 2. `tui.Run(items, cfg)` -- creates tcell screen, delegates to `runWithSession` if TreeMode
 3. `core.NewState(items, cfg)` -- creates root context with AllItems
-4. `applyFrontendConfig(s, cfg)` -- copies FrontendName/Version/Commands to State
-5. `terminal.InjectCommandFolder(s, EngineVersion)` -- appends hidden `:` folder
+4. `applyFrontendConfig(s, cfg)` -- copies FrontendName/Version/Commands + HidePalette to State
+5. `terminal.InjectCommandFolder(s, EngineVersion)` -- appends the `:` palette folder (visible at root; skipped entirely when `HidePalette` is set)
 6. `initSyncCheck` -- starts 1-second ticker goroutine that posts `tcell.EventInterrupt` for live redraws; checks bookmark staleness on a 20-minute interval
 7. Render loop: `drawUnified` -> `PollEvent` -> `HandleUnifiedKey` -> `processAction` -> repeat. Title bar is a dynamic status area managed via `State.SetTitle`/`ClearTitle`.
 

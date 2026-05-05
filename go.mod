@@ -3,8 +3,8 @@ module github.com/nelsong6/fzt-terminal
 go 1.26.1
 
 require (
-	github.com/gdamore/tcell/v2 v2.13.8
-	github.com/nelsong6/fzt v0.2.70
+	github.com/gdamore/tcell/v2 v2.13.9
+	github.com/nelsong6/fzt v0.2.72
 	github.com/nelsong6/fzt-frontend v0.1.32
 	golang.org/x/term v0.37.0
 )

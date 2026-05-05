@@ -10,7 +10,6 @@ import (
 	"github.com/nelsong6/fzt/render"
 )
 
-
 // -- Unified renderer --
 
 // drawUnified renders the prompt bar and tree. The tree is the single
@@ -85,22 +84,28 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	// Mode indicator: search (magnifying glass) vs nav (arrow) vs inspect (gear)
 	var promptIcon rune
 	var promptIconStyle tcell.Style
-	if s.InspectTargetIdx >= 0 {
-		promptIcon = '\u2699'  // ⚙ gear for inspect mode
+	if s.PromptMode != "" {
+		promptIcon = s.PromptIcon
+		if promptIcon == 0 {
+			promptIcon = '\uF002'
+		}
+		promptIconStyle = tcell.StyleDefault.Foreground(SearchModeFg).Bold(true).Background(promptBg)
+	} else if s.InspectTargetIdx >= 0 {
+		promptIcon = '\u2699' // ⚙ gear for inspect mode
 		promptIconStyle = tcell.StyleDefault.Foreground(HintFg).Background(promptBg)
 	} else if ctx.NavMode {
-		promptIcon = '\uF0A9'  //
+		promptIcon = '\uF0A9' //
 		promptIconStyle = tcell.StyleDefault.Foreground(NavModeFg).Background(promptBg)
 	} else {
-		promptIcon = '\uF002'  //
+		promptIcon = '\uF002' //
 		promptIconStyle = tcell.StyleDefault.Foreground(SearchModeFg).Bold(true).Background(promptBg)
 	}
 	promptLen := 2 // icon + space
 
 	// Top border of prompt bar
-	c.SetContent(borderOffset, y, '\u250c', nil, borderStyle)     // +
+	c.SetContent(borderOffset, y, '\u250c', nil, borderStyle) // +
 	for x := borderOffset + 1; x < w-borderOffset-1; x++ {
-		c.SetContent(x, y, '\u2500', nil, borderStyle)             // -
+		c.SetContent(x, y, '\u2500', nil, borderStyle) // -
 	}
 	c.SetContent(w-borderOffset-1, y, '\u2510', nil, borderStyle) // +
 	y++
@@ -112,7 +117,7 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	}
 	c.SetContent(w-borderOffset-1, y, '\u2502', nil, borderStyle) // |
 
-	px := borderOffset + 1 // content starts inside the border
+	px := borderOffset + 1       // content starts inside the border
 	pw := w - borderOffset*2 - 2 // content width inside borders
 	// Prompt: [icon] [locked breadcrumb >] [query or nav preview]
 	c.SetContent(px, y, promptIcon, nil, promptIconStyle)
@@ -149,7 +154,20 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	contentX := qx // where query or nav preview starts
 	contentW := pw - promptLen - scopeLen
 
-	if s.EditMode == "rename" {
+	if s.PromptMode != "" {
+		queryStyle := tcell.StyleDefault.Foreground(QueryFg).Background(promptBg)
+		if len(s.PromptQuery) > 0 {
+			drawText(c, contentX, y, string(s.PromptQuery), queryStyle, contentW)
+		} else {
+			hint := s.PromptPlaceholder
+			if hint == "" {
+				hint = "search\u2026"
+			}
+			hintStyle := tcell.StyleDefault.Foreground(HintFg).Italic(true).Background(promptBg)
+			drawText(c, contentX, y, hint, hintStyle, contentW)
+		}
+		c.ShowCursor(contentX+s.PromptCursor, y)
+	} else if s.EditMode == "rename" {
 		// Rename mode — show edit buffer as editable text
 		renameStyle := tcell.StyleDefault.Foreground(QueryFg).Background(promptBg)
 		drawText(c, contentX, y, string(s.EditBuffer), renameStyle, contentW)
@@ -181,9 +199,9 @@ func drawUnified(c render.Canvas, s *core.State, cfg Config, w, startY, h int) {
 	y++
 
 	// Bottom border of prompt bar
-	c.SetContent(borderOffset, y, '\u2514', nil, borderStyle)     // +
+	c.SetContent(borderOffset, y, '\u2514', nil, borderStyle) // +
 	for x := borderOffset + 1; x < w-borderOffset-1; x++ {
-		c.SetContent(x, y, '\u2500', nil, borderStyle)             // -
+		c.SetContent(x, y, '\u2500', nil, borderStyle) // -
 	}
 	c.SetContent(w-borderOffset-1, y, '\u2518', nil, borderStyle) // +
 	y++

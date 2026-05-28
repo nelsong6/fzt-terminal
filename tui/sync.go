@@ -35,9 +35,8 @@ func initSyncCheck(s *core.State, cfg Config, postEvent func()) {
 	s.SyncNextCheck = lastCheck + syncInterval
 
 	if now >= s.SyncNextCheck {
-		secret := s.JWTSecret
 		go func() {
-			stale := frontend.CheckBookmarkStaleness(cfg.ConfigDir, secret)
+			stale := frontend.CheckBookmarkStaleness(cfg.ConfigDir)
 			if stale {
 				s.SyncIcon = "⟳"
 			}
